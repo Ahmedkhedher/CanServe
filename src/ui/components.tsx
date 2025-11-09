@@ -1,7 +1,8 @@
 import React, { useRef, useEffect } from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, GestureResponderEvent, ViewStyle, Animated } from 'react-native';
+import { TouchableOpacity, Text, View, StyleSheet, GestureResponderEvent, ViewStyle, Animated, Image } from 'react-native';
 import { theme } from './theme';
 import { isSmartwatch, scaleFontSize } from './responsive';
+import { useAuth } from '../context/AuthContext';
 
 export const ButtonPrimary: React.FC<{ title: string; onPress?: (e: GestureResponderEvent) => void; style?: ViewStyle; disabled?: boolean; size?: 'sm' | 'md' | 'lg' }>
   = ({ title, onPress, style, disabled, size = 'md' }) => {
@@ -147,7 +148,9 @@ export const FooterBar: React.FC<{
   onQA: () => void;
   onChat: () => void;
   onProfile: () => void;
-}> = ({ active, onHome, onQA, onChat, onProfile }) => {
+  onPlus?: () => void;
+}> = ({ active, onHome, onQA, onChat, onProfile, onPlus }) => {
+  const { user } = useAuth();
   const scale1 = useRef(new Animated.Value(active === 'home' ? 1.1 : 1)).current;
   const scale2 = useRef(new Animated.Value(active === 'qa' ? 1.1 : 1)).current;
   const scale3 = useRef(new Animated.Value(active === 'chat' ? 1.1 : 1)).current;
@@ -161,7 +164,8 @@ export const FooterBar: React.FC<{
   }, [active, scale1, scale2, scale3, scale4]);
   
   return (
-    <View style={[styles.footerBar, theme.shadows.lg]}>
+    <View style={styles.footerWrap}>
+      <View style={[styles.footerBar, theme.shadows.lg]}>
       <Animated.View style={{ transform: [{ scale: scale1 }] }}>
         <TouchableOpacity onPress={onHome} style={styles.footerBtn}>
           <Text style={[styles.footerIcon, active==='home' && styles.footerIconActive]}>🏠</Text>
@@ -180,12 +184,29 @@ export const FooterBar: React.FC<{
           {!isSmartwatch && <Text style={[styles.footerLbl, active==='chat' && styles.footerLblActive]}>AI Chat</Text>}
         </TouchableOpacity>
       </Animated.View>
+      <View style={{ flex: 1 }} />
       <Animated.View style={{ transform: [{ scale: scale4 }] }}>
-        <TouchableOpacity onPress={onProfile} style={styles.footerBtn}>
-          <Text style={[styles.footerIcon, active==='profile' && styles.footerIconActive]}>👤</Text>
-          {!isSmartwatch && <Text style={[styles.footerLbl, active==='profile' && styles.footerLblActive]}>Profile</Text>}
+        <TouchableOpacity onPress={onProfile} style={[styles.footerBtn, styles.footerUser]}>
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.footerAvatar} />
+          ) : (
+            <View style={styles.footerAvatarFallback}>
+              <Text style={styles.footerAvatarText}>{(user?.displayName || 'U').slice(0,1).toUpperCase()}</Text>
+            </View>
+          )}
+          {!isSmartwatch && (
+            <Text style={[styles.footerUserName]} numberOfLines={1}>
+              {user?.displayName || user?.email || 'Profile'}
+            </Text>
+          )}
         </TouchableOpacity>
       </Animated.View>
+      </View>
+      {!!onPlus && (
+        <TouchableOpacity onPress={onPlus} style={[styles.plusBtn, theme.shadows.xl]} activeOpacity={0.9}>
+          <Text style={styles.plusIcon}>＋</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -308,16 +329,25 @@ const styles = StyleSheet.create({
     borderTopColor: 'transparent',
   },
   
-  // Footer bar
+  // Footer bar (pill)
+  footerWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: theme.spacing(1),
+  },
   footerBar: {
     flexDirection: 'row',
     backgroundColor: theme.colors.card,
-    borderTopWidth: 1,
+    borderWidth: 1,
     borderColor: theme.colors.border,
-    paddingVertical: isSmartwatch ? theme.spacing(0.5) : theme.spacing(1),
-    paddingHorizontal: theme.spacing(1),
+    paddingVertical: isSmartwatch ? theme.spacing(0.25) : theme.spacing(0.75),
+    paddingHorizontal: theme.spacing(1.5),
     justifyContent: 'space-around',
     alignItems: 'center',
+    borderRadius: theme.radius.full,
+    marginHorizontal: theme.spacing(3),
   },
   footerBtn: {
     alignItems: 'center',
@@ -340,5 +370,54 @@ const styles = StyleSheet.create({
   footerLblActive: {
     color: theme.colors.primary,
     fontWeight: '700',
+  },
+  footerUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    maxWidth: scaleFontSize(160),
+  },
+  footerAvatar: {
+    width: scaleFontSize(isSmartwatch ? 28 : 36),
+    height: scaleFontSize(isSmartwatch ? 28 : 36),
+    borderRadius: scaleFontSize(isSmartwatch ? 14 : 18),
+    backgroundColor: theme.colors.border,
+    marginRight: 6,
+  },
+  footerAvatarFallback: {
+    width: scaleFontSize(isSmartwatch ? 28 : 36),
+    height: scaleFontSize(isSmartwatch ? 28 : 36),
+    borderRadius: scaleFontSize(isSmartwatch ? 14 : 18),
+    backgroundColor: theme.colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  footerAvatarText: {
+    color: theme.colors.primary,
+    fontWeight: '800',
+    fontSize: scaleFontSize(14),
+  },
+  footerUserName: {
+    color: theme.colors.text,
+    fontWeight: '600',
+    maxWidth: scaleFontSize(160),
+  },
+  plusBtn: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: theme.spacing(2.5),
+    width: scaleFontSize(isSmartwatch ? 40 : 56),
+    height: scaleFontSize(isSmartwatch ? 40 : 56),
+    borderRadius: scaleFontSize(isSmartwatch ? 20 : 28),
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusIcon: {
+    color: theme.colors.primaryText,
+    fontSize: scaleFontSize(isSmartwatch ? 24 : 30),
+    fontWeight: '900',
+    lineHeight: scaleFontSize(isSmartwatch ? 24 : 30),
   },
 });

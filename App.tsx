@@ -6,26 +6,27 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LoadingSpinner } from './src/ui/components';
 import { theme } from './src/ui/theme';
 import { scaleFontSize } from './src/ui/responsive';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 function Root() {
-  const { user, initializing } = useAuth();
+  console.log('Root component rendering');
+  const { user, initializing, onboardingNeeded } = useAuth();
+  console.log('Auth state:', { hasUser: !!user, initializing, onboardingNeeded });
+  
   if (initializing) {
+    console.log('Showing loading screen');
     return (
       <View style={styles.loadingContainer}>
-        <View style={styles.loadingCard}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>LW</Text>
-          </View>
-          <LoadingSpinner size="lg" />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
+  
+  console.log('Loading complete, rendering navigator');
   return (
     <>
       <StatusBar style="auto" />
-      <AppNavigator isAuthenticated={!!user} />
+      <AppNavigator isAuthenticated={!!user} onboardingNeeded={onboardingNeeded} />
     </>
   );
 }
@@ -66,8 +67,10 @@ const styles = StyleSheet.create({
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Root />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Root />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

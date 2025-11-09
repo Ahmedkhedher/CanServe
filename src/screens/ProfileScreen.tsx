@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Linking, TextInput, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Linking, TextInput, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { FooterBar, ButtonSecondary, ButtonPrimary, Card } from '../ui/components';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,9 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [cancerType, setCancerType] = useState('');
+  const [stage, setStage] = useState('');
+  const [age, setAge] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -29,6 +32,9 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
       if (p) {
         setDisplayName(p.displayName || 'Member');
         setPhotoURL(p.photoURL);
+        if (p.cancerType) setCancerType(p.cancerType);
+        if (p.stage) setStage(p.stage);
+        if (typeof p.age === 'number') setAge(String(p.age));
       }
     })();
   }, []);
@@ -55,7 +61,14 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
   const onSave = async () => {
     try {
       setSaving(true);
-      await saveProfile({ displayName: displayName.trim() || 'Member', photoURL });
+      const ageNum = parseInt(age, 10);
+      await saveProfile({ 
+        displayName: displayName.trim() || 'Member', 
+        photoURL,
+        cancerType: cancerType.trim() || undefined,
+        stage: stage.trim() || undefined,
+        age: Number.isFinite(ageNum) ? ageNum : undefined,
+      });
       Alert.alert('Saved', 'Your profile has been updated.');
     } catch (e: any) {
       Alert.alert('Save failed', e?.message ?? 'Unknown error');
@@ -66,6 +79,7 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: theme.spacing(16) }}>
       <Text style={styles.title}>Your Profile</Text>
 
       <Card style={{ alignItems: 'center' }}>
@@ -82,6 +96,31 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
           style={styles.input}
         />
         <View style={{ height: theme.spacing(1) }} />
+        <TextInput
+          placeholder="Cancer type"
+          placeholderTextColor={theme.colors.subtext}
+          value={cancerType}
+          onChangeText={setCancerType}
+          style={styles.input}
+        />
+        <View style={{ height: theme.spacing(1) }} />
+        <TextInput
+          placeholder="Stage"
+          placeholderTextColor={theme.colors.subtext}
+          value={stage}
+          onChangeText={setStage}
+          style={styles.input}
+        />
+        <View style={{ height: theme.spacing(1) }} />
+        <TextInput
+          placeholder="Age"
+          placeholderTextColor={theme.colors.subtext}
+          value={age}
+          onChangeText={setAge}
+          keyboardType="number-pad"
+          style={styles.input}
+        />
+        <View style={{ height: theme.spacing(1) }} />
         <ButtonPrimary title={saving ? 'Saving…' : 'Save profile'} onPress={onSave} disabled={saving} />
       </Card>
 
@@ -89,10 +128,13 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
       <View style={styles.avatarGrid}>
         {AVATARS.map((u, i) => (
           <TouchableOpacity key={i} onPress={() => setPhotoURL(u)}>
-            <Image source={{ uri: u }} style={[styles.avatarSmall, photoURL === u && styles.avatarSmallActive]} />
+            <Image source={{ uri: u }} style={[styles.avatarSmall, photoURL === u ? styles.avatarSmallActive : undefined]} />
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={{ height: theme.spacing(2) }} />
+      <ButtonSecondary title="View profile details" onPress={() => navigation.navigate('OnboardingSummary')} />
 
       <Text style={styles.section}>Resources</Text>
       <View style={styles.card}>
@@ -107,22 +149,24 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
         </View>
       )}
 
-      <View style={{ flex: 1 }} />
+      <View style={{ height: theme.spacing(12) }} />
       <ButtonSecondary title="Sign out" onPress={signOut} />
       <View style={{ height: theme.spacing(1) }} />
+      </ScrollView>
       <FooterBar
         active="profile"
         onHome={() => navigation.navigate('Main')}
         onQA={() => navigation.navigate('Feed')}
         onChat={() => navigation.navigate('Chat')}
         onProfile={() => {}}
+        onPlus={() => navigation.navigate('Compose', { mode: 'question' })}
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: theme.spacing(2), backgroundColor: theme.colors.bg },
+  container: { flex: 1, padding: theme.spacing(2), backgroundColor: theme.colors.bg, paddingBottom: theme.spacing(2) },
   title: { fontSize: 20, fontWeight: '700', marginBottom: theme.spacing(1), color: theme.colors.text },
   section: { marginTop: theme.spacing(2), marginBottom: theme.spacing(1), fontWeight: '700', color: theme.colors.text },
   card: { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing(2) },

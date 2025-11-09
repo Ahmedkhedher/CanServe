@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Animated, TouchableOpacity } from 'react-native';
 import { ButtonPrimary, ButtonSecondary, ButtonOutline, Card } from '../ui/components';
 import { useAuth } from '../context/AuthContext';
 import { isConfigured } from '../firebase/app';
@@ -8,8 +8,10 @@ import { isSmartwatch, scaleFontSize } from '../ui/responsive';
 
 const LoginScreen: React.FC = () => {
   const { signInEmail, signUpEmail, signInWithGoogle } = useAuth();
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState<'signin' | 'signup' | 'google' | null>(null);
   const [error, setError] = useState<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -46,9 +48,29 @@ const LoginScreen: React.FC = () => {
             </Text>
           </View>
 
-          {/* Login Form Card */}
+          {/* Auth Tabs */}
+          <View style={styles.tabsRow}>
+            <TouchableOpacity
+              onPress={() => setMode('signin')}
+              style={[styles.tabBtn, mode==='signin' && styles.tabBtnActive]}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.tabText, mode==='signin' && styles.tabTextActive]}>Sign In</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setMode('signup')}
+              style={[styles.tabBtn, mode==='signup' && styles.tabBtnActive]}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.tabText, mode==='signup' && styles.tabTextActive]}>Create Account</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Auth Form Card */}
           <Card elevated style={styles.formCard}>
-            <Text style={styles.formTitle}>{isSmartwatch ? 'Sign In' : 'Welcome Back'}</Text>
+            <Text style={styles.formTitle}>
+              {mode === 'signin' ? (isSmartwatch ? 'Sign In' : 'Welcome Back') : (isSmartwatch ? 'Sign Up' : 'Create Your Account')}
+            </Text>
             
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email</Text>
@@ -77,6 +99,21 @@ const LoginScreen: React.FC = () => {
               />
             </View>
 
+            {mode === 'signup' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Confirm Password</Text>
+                <TextInput
+                  placeholder="••••••••"
+                  placeholderTextColor={theme.colors.subtext}
+                  value={confirm}
+                  onChangeText={setConfirm}
+                  style={styles.input}
+                  secureTextEntry
+                  autoComplete="password"
+                />
+              </View>
+            )}
+
             {!!error && (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>⚠️ {error}</Text>
@@ -84,69 +121,51 @@ const LoginScreen: React.FC = () => {
             )}
 
             <View style={styles.buttonGroup}>
-              <ButtonPrimary
-                title={loading === 'signin' ? 'Signing in…' : 'Sign In'}
-                disabled={!!loading}
-                size={isSmartwatch ? 'sm' : 'md'}
-                onPress={async () => {
-                  setError('');
-                  const emailTrimmed = email.trim();
-                  const validEmail = /.+@.+\..+/.test(emailTrimmed);
-                  if (!validEmail) {
-                    setError('Please enter a valid email address.');
-                    return;
-                  }
-                  if (!password) {
-                    setError('Please enter your password.');
-                    return;
-                  }
-                  setLoading('signin');
-                  try {
-                    console.log('[UI] Sign In pressed');
-                    alert('Sign In pressed');
-                    await signInEmail(emailTrimmed, password);
-                  } catch (e: any) {
-                    setError(e?.message || 'Failed to sign in');
-                  } finally {
-                    setLoading(null);
-                  }
-                }}
-              />
-              
-              <View style={{ height: theme.spacing(1) }} />
-              
-              <ButtonSecondary
-                title={loading === 'signup' ? 'Signing up…' : 'Create Account'}
-                disabled={!!loading}
-                size={isSmartwatch ? 'sm' : 'md'}
-                onPress={async () => {
-                  setError('');
-                  const emailTrimmed = email.trim();
-                  const validEmail = /.+@.+\..+/.test(emailTrimmed);
-                  if (!validEmail) {
-                    setError('Please enter a valid email address.');
-                    return;
-                  }
-                  if (!password) {
-                    setError('Please enter a password.');
-                    return;
-                  }
-                  if (password.length < 6) {
-                    setError('Password must be at least 6 characters.');
-                    return;
-                  }
-                  setLoading('signup');
-                  try {
-                    console.log('[UI] Sign Up pressed');
-                    alert('Sign Up pressed');
-                    await signUpEmail(emailTrimmed, password);
-                  } catch (e: any) {
-                    setError(e?.message || 'Failed to sign up');
-                  } finally {
-                    setLoading(null);
-                  }
-                }}
-              />
+              {mode === 'signin' ? (
+                <ButtonPrimary
+                  title={loading === 'signin' ? 'Signing in…' : 'Sign In'}
+                  disabled={!!loading}
+                  size={isSmartwatch ? 'sm' : 'md'}
+                  onPress={async () => {
+                    setError('');
+                    const emailTrimmed = email.trim();
+                    const validEmail = /.+@.+\..+/.test(emailTrimmed);
+                    if (!validEmail) return setError('Please enter a valid email address.');
+                    if (!password) return setError('Please enter your password.');
+                    setLoading('signin');
+                    try {
+                      await signInEmail(emailTrimmed, password);
+                    } catch (e: any) {
+                      setError(e?.message || 'Failed to sign in');
+                    } finally {
+                      setLoading(null);
+                    }
+                  }}
+                />
+              ) : (
+                <ButtonPrimary
+                  title={loading === 'signup' ? 'Creating…' : 'Create Account'}
+                  disabled={!!loading}
+                  size={isSmartwatch ? 'sm' : 'md'}
+                  onPress={async () => {
+                    setError('');
+                    const emailTrimmed = email.trim();
+                    const validEmail = /.+@.+\..+/.test(emailTrimmed);
+                    if (!validEmail) return setError('Please enter a valid email address.');
+                    if (!password) return setError('Please enter a password.');
+                    if (password.length < 6) return setError('Password must be at least 6 characters.');
+                    if (password !== confirm) return setError('Passwords do not match.');
+                    setLoading('signup');
+                    try {
+                      await signUpEmail(emailTrimmed, password);
+                    } catch (e: any) {
+                      setError(e?.message || 'Failed to sign up');
+                    } finally {
+                      setLoading(null);
+                    }
+                  }}
+                />
+              )}
             </View>
 
             {!isSmartwatch && (
@@ -164,8 +183,6 @@ const LoginScreen: React.FC = () => {
                     setError('');
                     setLoading('google');
                     try {
-                      console.log('[UI] Google pressed');
-                      alert('Google pressed');
                       await signInWithGoogle();
                     } catch (e: any) {
                       setError(e?.message || 'Google sign-in failed');
@@ -340,6 +357,33 @@ const styles = StyleSheet.create({
     color: theme.colors.subtext,
     textAlign: 'center',
     fontSize: scaleFontSize(11),
+  },
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.full,
+    padding: 4,
+    marginBottom: theme.spacing(1.5),
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: theme.spacing(0.75),
+    alignItems: 'center',
+    borderRadius: theme.radius.full,
+  },
+  tabBtnActive: {
+    backgroundColor: theme.colors.primaryLight,
+  },
+  tabText: {
+    color: theme.colors.subtext,
+    fontWeight: '700',
+    fontSize: scaleFontSize(12),
+  },
+  tabTextActive: {
+    color: theme.colors.primary,
   },
 });
 

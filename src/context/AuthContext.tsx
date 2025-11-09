@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { auth, isConfigured } from '../firebase/app';
+import { auth, db, isConfigured } from '../firebase/app';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -19,6 +20,7 @@ import {
 type AuthContextType = {
   user: User | null;
   initializing: boolean;
+  onboardingNeeded: boolean;
   signInEmail: (email: string, password: string) => Promise<void>;
   signUpEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,17 +32,73 @@ const Ctx = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
 
   useEffect(() => {
     if (!auth || !isConfigured) {
+      console.log('Firebase not configured, skipping auth');
       setInitializing(false);
       return;
     }
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    let profileUnsub: (() => void) | undefined;
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      try {
+        setUser(u);
+      if (u) {
+        // live listen to user profile so onboardingNeeded updates immediately after save
+        try {
+          const userDoc = doc(db!, 'users', u.uid);
+          const isNewUser = u.metadata && u.metadata.creationTime === u.metadata.lastSignInTime;
+          
+          profileUnsub = onSnapshot(
+            userDoc,
+            (snap) => {
+              const profileExists = snap.exists();
+              const data = profileExists ? (snap.data() as any) : {};
+              
+              // Check if onboarding is complete
+              const explicitComplete = data?.onboardingComplete === true;
+              const hasBasicInfo = !!(data?.displayName) && typeof data?.age === 'number';
+              
+              // New users without profile need onboarding
+              if (!profileExists && isNewUser) {
+                console.log('New user detected - needs onboarding');
+                setOnboardingNeeded(true);
+                return;
+              }
+              
+              // Existing users who haven't completed onboarding
+              if (!explicitComplete && !hasBasicInfo) {
+                console.log('User needs onboarding - incomplete profile');
+                setOnboardingNeeded(true);
+                return;
+              }
+              
+              // Onboarding is complete
+              console.log('Onboarding complete');
+              setOnboardingNeeded(false);
+            },
+            (error) => {
+              console.error('Profile snapshot error:', error);
+              // On error, assume new user needs onboarding
+              setOnboardingNeeded(true);
+            }
+          );
+        } catch (error) {
+          console.error('Profile setup error:', error);
+          setOnboardingNeeded(true);
+        }
+      } else {
+        setOnboardingNeeded(false);
+        if (profileUnsub) { try { profileUnsub(); } catch {} profileUnsub = undefined; }
+      }
       setInitializing(false);
+      } catch (error) {
+        console.error('Auth error:', error);
+        setInitializing(false);
+      }
     });
-    return unsub;
+    return () => { if (profileUnsub) { try { profileUnsub(); } catch {} } unsub(); };
   }, []);
 
   const signInEmail = async (email: string, password: string) => {
@@ -50,7 +108,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string) => {
     if (!auth || !isConfigured) return Alert.alert('Config missing', 'Add Firebase config first.');
-    await createUserWithEmailAndPassword(auth, email.trim(), password);
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const u = cred.user;
+      try {
+        // Seed a minimal profile doc so onboarding gating has a stable snapshot
+        const userDoc = doc(db!, 'users', u.uid);
+        await (await import('firebase/firestore')).setDoc(
+          userDoc,
+          { onboardingComplete: false },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('[Auth] Failed to seed user doc', e);
+      }
+    } catch (e: any) {
+      Alert.alert('Sign up failed', e?.message ?? 'Unknown error');
+      throw e;
+    }
   };
 
   const signOut = async () => {
@@ -110,8 +185,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const value = useMemo(
-    () => ({ user, initializing, signInEmail, signUpEmail, signOut, signInWithGoogle }),
-    [user, initializing]
+    () => ({ user, initializing, onboardingNeeded, signInEmail, signUpEmail, signOut, signInWithGoogle }),
+    [user, initializing, onboardingNeeded]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

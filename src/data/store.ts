@@ -1,7 +1,7 @@
 import { collection, addDoc, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp, updateDoc, where, runTransaction, setDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/app';
 
-export type UserRef = { id: string; name: string };
+export type UserRef = { id: string; name: string; photoURL?: string; cancerType?: string; stage?: string; age?: number };
 export type Question = {
   id: string;
   title: string;
@@ -35,7 +35,8 @@ const aCol = () => collection(db!, 'answers');
 const currentUser = (): UserRef => {
   const u = auth?.currentUser;
   const name = u?.displayName || u?.email || 'User';
-  return { id: u?.uid || 'anon', name };
+  const photoURL = u?.photoURL || undefined;
+  return { id: u?.uid || 'anon', name, photoURL };
 };
 
 export const getQuestions = async (): Promise<Question[]> => {
@@ -51,28 +52,31 @@ export const getQuestionById = async (id: string): Promise<Question | null> => {
 };
 
 export const getAnswersFor = async (questionId: string): Promise<Answer[]> => {
-  try {
-    const q1 = query(aCol(), where('questionId', '==', questionId), orderBy('createdAt', 'desc'), limit(50));
-    const snap = await getDocs(q1);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Answer[];
-  } catch (e) {
-    // Fallback without orderBy (avoids composite index requirement)
-    // eslint-disable-next-line no-console
-    console.warn('[store] getAnswersFor fallback (no index for orderBy createdAt):', e);
-    const q2 = query(aCol(), where('questionId', '==', questionId), limit(50));
-    const snap2 = await getDocs(q2);
-    const arr = snap2.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Answer[];
-    // best-effort sort by createdAt if present
-    return arr.sort((a, b) => {
-      const ta = (a as any).createdAt?.toMillis?.() ?? 0;
-      const tb = (b as any).createdAt?.toMillis?.() ?? 0;
-      return tb - ta;
-    });
-  }
+  const q2 = query(aCol(), where('questionId', '==', questionId), limit(50));
+  const snap2 = await getDocs(q2);
+  const arr = snap2.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Answer[];
+  // best-effort sort by createdAt if present
+  return arr.sort((a, b) => {
+    const ta = (a as any).createdAt?.toMillis?.() ?? 0;
+    const tb = (b as any).createdAt?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
 };
 
 export const addQuestion = async (title: string): Promise<Question> => {
   const author = currentUser();
+  // Enrich with public illness profile if available
+  try {
+    if (author.id !== 'anon') {
+      const prof = await getDoc(doc(db!, 'users', author.id));
+      const d = prof.exists() ? (prof.data() as any) : null;
+      if (d) {
+        (author as any).cancerType = d.cancerType;
+        (author as any).stage = d.stage;
+        (author as any).age = typeof d.age === 'number' ? d.age : undefined;
+      }
+    }
+  } catch {}
   const data = {
     title,
     author,
@@ -88,6 +92,18 @@ export const addQuestion = async (title: string): Promise<Question> => {
 
 export const addAnswer = async (questionId: string, body: string): Promise<Answer> => {
   const author = currentUser();
+  // Enrich with public illness profile if available
+  try {
+    if (author.id !== 'anon') {
+      const prof = await getDoc(doc(db!, 'users', author.id));
+      const d = prof.exists() ? (prof.data() as any) : null;
+      if (d) {
+        (author as any).cancerType = d.cancerType;
+        (author as any).stage = d.stage;
+        (author as any).age = typeof d.age === 'number' ? d.age : undefined;
+      }
+    }
+  } catch {}
   const data = {
     questionId,
     author,

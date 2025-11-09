@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Text } from 'react-native';
+import { Text, Platform } from 'react-native';
 import FeedScreen from '../screens/FeedScreen';
 import QuestionScreen from '../screens/QuestionScreen';
 import ComposeScreen from '../screens/ComposeScreen';
@@ -15,10 +15,14 @@ import LoginScreen from '../screens/LoginScreen';
 import MainScreen from '../screens/MainScreen';
 import ChatScreen from '../screens/ChatScreen';
 import NutritionCheckScreen from '../screens/NutritionCheckScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
+import OnboardingSummaryScreen from '../screens/OnboardingSummaryScreen';
 
 export type RootStackParamList = {
   Login: undefined;
   Main: undefined;
+  Onboarding: undefined;
+  OnboardingSummary: undefined;
   Assessment: undefined;
   Feed: undefined;
   Chat: undefined;
@@ -36,30 +40,87 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 interface Props {
   isAuthenticated: boolean;
+  onboardingNeeded?: boolean;
 }
 
-const AppNavigator: React.FC<Props> = ({ isAuthenticated }) => {
+const AppNavigator: React.FC<Props> = ({ isAuthenticated, onboardingNeeded }) => {
+  console.log('AppNavigator rendering', { isAuthenticated, onboardingNeeded });
+  
+  const screenOptions = {
+    headerShown: false,
+    animation: 'slide_from_right' as const,
+    animationDuration: 300,
+    animationTypeForReplace: 'push' as const,
+    presentation: 'card' as const,
+  };
+
+  console.log('Creating NavigationContainer');
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!isAuthenticated ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
-        ) : (
-          <>
-            <Stack.Screen name="Main" component={MainScreen} />
-            <Stack.Screen name="Assessment" component={AssessmentScreen} />
-            <Stack.Screen name="Feed" component={FeedScreen} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
-            <Stack.Screen name="Question" component={QuestionScreen} />
-            <Stack.Screen name="Compose" component={ComposeScreen} />
-            <Stack.Screen name="Report" component={ReportScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="Wellness" component={WellnessScreen} />
-            <Stack.Screen name="SuggestionDetail" component={SuggestionDetailScreen} />
-          </>
-        )}
-      </Stack.Navigator>
+      {!isAuthenticated ? (
+        <Stack.Navigator screenOptions={screenOptions} initialRouteName="Login">
+          <Stack.Screen name="Login" component={LoginScreen} options={{ animation: 'fade' }} />
+        </Stack.Navigator>
+      ) : onboardingNeeded ? (
+        <Stack.Navigator screenOptions={screenOptions} initialRouteName="Onboarding">
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
+          <Stack.Screen name="Main" component={MainScreen} options={{ animation: 'fade' }} />
+          <Stack.Screen name="Assessment" component={AssessmentScreen} />
+          <Stack.Screen 
+            name="Feed" 
+            component={FeedScreen}
+            options={{ 
+              animation: 'slide_from_right',
+              animationDuration: 350,
+            }} 
+          />
+          <Stack.Screen name="Chat" component={ChatScreen} />
+          <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
+          <Stack.Screen 
+            name="Question" 
+            component={QuestionScreen}
+            options={{ 
+              animation: 'slide_from_right',
+              animationDuration: 350,
+            }} 
+          />
+          <Stack.Screen name="Compose" component={ComposeScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Report" component={ReportScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Wellness" component={WellnessScreen} />
+          <Stack.Screen name="SuggestionDetail" component={SuggestionDetailScreen} />
+          <Stack.Screen name="OnboardingSummary" component={OnboardingSummaryScreen} />
+        </Stack.Navigator>
+      ) : (
+        <Stack.Navigator screenOptions={screenOptions} initialRouteName="Main">
+          <Stack.Screen name="Main" component={MainScreen} options={{ animation: 'fade' }} />
+          <Stack.Screen name="Assessment" component={AssessmentScreen} />
+          <Stack.Screen 
+            name="Feed" 
+            component={FeedScreen}
+            options={{ 
+              animation: 'slide_from_right',
+              animationDuration: 350,
+            }} 
+          />
+          <Stack.Screen name="Chat" component={ChatScreen} />
+          <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
+          <Stack.Screen 
+            name="Question" 
+            component={QuestionScreen}
+            options={{ 
+              animation: 'slide_from_right',
+              animationDuration: 350,
+            }} 
+          />
+          <Stack.Screen name="Compose" component={ComposeScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Report" component={ReportScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Wellness" component={WellnessScreen} />
+          <Stack.Screen name="SuggestionDetail" component={SuggestionDetailScreen} />
+          <Stack.Screen name="OnboardingSummary" component={OnboardingSummaryScreen} />
+        </Stack.Navigator>
+      )}
     </NavigationContainer>
   );
 };

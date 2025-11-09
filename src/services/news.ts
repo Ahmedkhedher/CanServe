@@ -1,4 +1,4 @@
-const API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY as string | undefined;
+const API_KEY = "344803106a0d445eadff26b513d50675";
 
 export type NewsItem = {
   title: string;

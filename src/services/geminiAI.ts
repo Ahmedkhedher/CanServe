@@ -6,11 +6,23 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // For production, use environment variables. See GEMINI_AI_SETUP.md
 const GEMINI_API_KEY = 'AIzaSyA1MStjl__YE2EsZeyIqoD3x60x4Ea99bU'; // Replace with your API key
 
+export interface FoodAnalysisData {
+  foodName: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  recommended: 'yes' | 'no';
+  healthNotes: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  imageUri?: string; // For food images uploaded by user
+  foodAnalysis?: FoodAnalysisData; // For AI analysis of food images
 }
 
 

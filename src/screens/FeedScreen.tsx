@@ -1,27 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ImageBackground, Animated } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useAuth } from '../context/AuthContext';
-import { getQuestions, toggleFollow, upvoteQuestionOnce, Question, seedSampleData, getAnswersFor, Answer, addAnswer, addQuestion } from '../data/store';
-import { ButtonPrimary, ButtonSecondary, Card, Tag, MetaText } from '../ui/components';
+import { getQuestions, toggleFollow, upvoteQuestionOnce, Question, seedSampleData, addQuestion } from '../data/store';
+import { Card, Tag, MetaText } from '../ui/components';
 import { theme } from '../ui/theme';
 import { isSmartwatch, scaleFontSize } from '../ui/responsive';
+import Svg, { Path } from 'react-native-svg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Feed'>;
 
 const FeedScreen: React.FC<Props> = ({ navigation }) => {
-  const { signOut } = useAuth();
+  const { user } = useAuth();
   const [items, setItems] = useState<Question[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'most' | 'nearby' | 'latest'>('most');
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [answersMap, setAnswersMap] = useState<Record<string, Answer[]>>({});
-  const [answersLoading, setAnswersLoading] = useState<Record<string, boolean>>({});
-  const [imgFallback, setImgFallback] = useState<Record<string, boolean>>({});
   const [askText, setAskText] = useState('');
-  const [answerInputs, setAnswerInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
@@ -50,68 +48,6 @@ const FeedScreen: React.FC<Props> = ({ navigation }) => {
     setItems(data);
   };
 
-  const submitQuestion = async () => {
-    const t = askText.trim();
-    if (!t) return;
-    try {
-      const q = await addQuestion(t);
-      setAskText('');
-      // Refresh feed and open the created question
-      await onRefresh();
-      // Optionally navigate: navigation.navigate('Question', { id: q.id });
-    } catch (e: any) {
-      Alert.alert('Unable to post', e?.message || 'Try again later.');
-    }
-  };
-
-  const submitAnswer = async (qid: string) => {
-    const body = (answerInputs[qid] || '').trim();
-    if (!body) return;
-    try {
-      await addAnswer(qid, body);
-      setAnswerInputs((prev) => ({ ...prev, [qid]: '' }));
-      const ads = await getAnswersFor(qid);
-      setAnswersMap((prev) => ({ ...prev, [qid]: ads }));
-    } catch (e: any) {
-      Alert.alert('Unable to answer', e?.message || 'Try again later.');
-    }
-  };
-
-  const toggleExpand = async (id: string) => {
-    const next = !expanded[id];
-    setExpanded((prev) => ({ ...prev, [id]: next }));
-    if (next && !answersMap[id]) {
-      setAnswersLoading((prev) => ({ ...prev, [id]: true }));
-      try {
-        const ans = await getAnswersFor(id);
-        setAnswersMap((prev) => ({ ...prev, [id]: ans }));
-      } finally {
-        setAnswersLoading((prev) => ({ ...prev, [id]: false }));
-      }
-    }
-  };
-
-  const imageFor = (id: string) => {
-    const n = parseInt(id.replace(/\D/g, ''), 10) || 1;
-    const picks = [
-      // Purple ribbon / awareness themed images with richer colors
-      'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?q=80&w=1600&auto=format&fit=crop',
-      // Support hands with warm tones
-      'https://images.unsplash.com/photo-1519336555923-59661f41bb36?q=80&w=1600&auto=format&fit=crop',
-      // Healthcare consultation (no white background)
-      'https://images.unsplash.com/photo-1580281657701-829e6f4c0b09?q=80&w=1600&auto=format&fit=crop',
-      // Group support, soft purple lighting
-      'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=80&w=1600&auto=format&fit=crop',
-    ];
-    const url = picks[n % picks.length];
-    if (imgFallback[id]) {
-      return 'https://images.unsplash.com/photo-1526256262350-7da7584cf5eb?q=80&w=1600&auto=format&fit=crop';
-    }
-    return url;
-  };
-
-  const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()));
-
   const onUpvote = async (id: string) => {
     try {
       const res = await upvoteQuestionOnce(id);
@@ -125,277 +61,575 @@ const FeedScreen: React.FC<Props> = ({ navigation }) => {
       setItems(data);
     }
   };
+
+  const submitQuestion = async () => {
+    const text = askText.trim();
+    if (!text) {
+      Alert.alert('Empty question', 'Please enter a question');
+      return;
+    }
+    try {
+      await addQuestion(text);
+      setAskText('');
+      await onRefresh();
+      Alert.alert('Success', 'Your question has been posted!');
+    } catch (e: any) {
+      Alert.alert('Unable to post', e?.message || 'Try again later.');
+    }
+  };
+
+  const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()));
+
   return (
     <View style={styles.container}>
-      {!isSmartwatch && (
-        <View style={styles.header}>
-          <View style={styles.brandRow}>
-            <Text style={styles.brandText}>LifeWeaver</Text>
-          </View>
-          <View style={styles.headerCenter}><Text style={styles.headerTitle}>Home</Text></View>
-          <View style={styles.headerActions}>
-            <ButtonSecondary title="Seed" onPress={async () => { await seedSampleData(); await onRefresh(); }} size="sm" />
-            <View style={{ width: theme.spacing(1) }} />
-            <ButtonPrimary title="Ask" onPress={() => navigation.navigate('Compose', { mode: 'question' })} size="sm" />
-          </View>
+      {/* Header like MainScreen */}
+      <View style={styles.header}>
+        <View style={styles.headerWrap}>
+          <TouchableOpacity onPress={() => navigation.navigate('Main')} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={scaleFontSize(20)} color="#6B7280" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.headerRow} activeOpacity={0.85}>
+            {user?.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={styles.headerAvatar} />
+            ) : (
+              <View style={styles.headerAvatarFallback}>
+                <Text style={styles.headerAvatarText}>{(user?.displayName || 'U').slice(0,1).toUpperCase()}</Text>
+              </View>
+            )}
+            <View>
+              <Text style={styles.hey}>Hey</Text>
+              <Text style={styles.name} numberOfLines={1}>{user?.displayName || 'Member'}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.settingsBtn} activeOpacity={0.85}>
+            <Svg width={34} height={34} viewBox="0 0 34 34">
+              <Path d="M6 10 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
+              <Path d="M6 17 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
+              <Path d="M6 24 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
+            </Svg>
+          </TouchableOpacity>
         </View>
-      )}
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={scaleFontSize(20)} color={theme.colors.subtext} />
+        <TextInput
+          placeholder="Search questions..."
+          placeholderTextColor={theme.colors.subtext}
+          value={query}
+          onChangeText={setQuery}
+          style={styles.searchInput}
+        />
+        {query.length > 0 && (
+          <TouchableOpacity onPress={() => setQuery('')}>
+            <Ionicons name="close-circle" size={scaleFontSize(20)} color={theme.colors.subtext} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Filter Pills */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        contentContainerStyle={styles.filterContainer}
+        style={styles.filterScrollView}
+      >
+        <TouchableOpacity onPress={() => setFilter('most')}>
+          <LinearGradient
+            colors={filter === 'most' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
+            style={[styles.filterPill, filter === 'most' && styles.filterPillActive]}
+          >
+            <MaterialCommunityIcons 
+              name="fire" 
+              size={scaleFontSize(16)} 
+              color={filter === 'most' ? theme.colors.primaryText : theme.colors.text} 
+            />
+            <Text style={[styles.filterText, filter === 'most' && styles.filterTextActive]}>
+              Most Viewed
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setFilter('nearby')}>
+          <LinearGradient
+            colors={filter === 'nearby' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
+            style={[styles.filterPill, filter === 'nearby' && styles.filterPillActive]}
+          >
+            <MaterialCommunityIcons 
+              name="map-marker" 
+              size={scaleFontSize(16)} 
+              color={filter === 'nearby' ? theme.colors.primaryText : theme.colors.text} 
+            />
+            <Text style={[styles.filterText, filter === 'nearby' && styles.filterTextActive]}>
+              Nearby
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setFilter('latest')}>
+          <LinearGradient
+            colors={filter === 'latest' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
+            style={[styles.filterPill, filter === 'latest' && styles.filterPillActive]}
+          >
+            <MaterialCommunityIcons 
+              name="clock-outline" 
+              size={scaleFontSize(16)} 
+              color={filter === 'latest' ? theme.colors.primaryText : theme.colors.text} 
+            />
+            <Text style={[styles.filterText, filter === 'latest' && styles.filterTextActive]}>
+              Latest
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {!isSmartwatch && (
+          <TouchableOpacity onPress={async () => { await seedSampleData(); await onRefresh(); }}>
+            <View style={styles.filterPill}>
+              <MaterialCommunityIcons name="seed" size={scaleFontSize(16)} color={theme.colors.accent} />
+              <Text style={styles.filterText}>Seed Data</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+
+      {/* Questions List */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         refreshing={refreshing}
         onRefresh={onRefresh}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <View>
-            {!isSmartwatch ? (
-              <View style={styles.heroWrap}>
-                <ImageBackground
-                  source={{ uri: 'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?q=80&w=1600&auto=format&fit=crop' }}
-                  style={styles.hero}
-                  imageStyle={{ borderRadius: theme.radius.lg }}
-                >
-                  <View style={styles.heroOverlay}>
-                    <View style={styles.heroTopRow}>
-                      <TouchableOpacity onPress={() => navigation.navigate('Main')} style={styles.backBadge}><Text style={styles.backBadgeText}>←</Text></TouchableOpacity>
-                      <View style={{ flex: 1 }} />
-                      <View style={styles.brandRow}><View style={styles.brandLogo}><Text style={styles.brandLogoText}>LW</Text></View><Text style={styles.brandWord}>LifeWeaver</Text></View>
-                    </View>
-                    <Text style={styles.heroTitle}>Explore Q&A</Text>
-                    <Text style={styles.heroSubtitle}>Ask questions and find answers</Text>
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('Question', { id: item.id })}
+            activeOpacity={0.7}
+          >
+            <Card elevated style={styles.questionCard}>
+              {/* Header with Topic and Stats */}
+              <View style={styles.cardHeader}>
+                <Tag text={item.topic} />
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Ionicons name="chatbubble" size={scaleFontSize(14)} color="#5B9AB8" />
+                    <Text style={styles.statValue}>{item.answersCount}</Text>
                   </View>
-                </ImageBackground>
+                  <View style={styles.statItem}>
+                    <Ionicons name="arrow-up-circle" size={scaleFontSize(14)} color="#4A90A4" />
+                    <Text style={styles.statValue}>{item.upvotes}</Text>
+                  </View>
+                </View>
               </View>
-            ) : (
-              <View style={styles.compactHeader}>
-                <TouchableOpacity onPress={() => navigation.navigate('Main')} style={styles.backBadge}>
-                  <Text style={styles.backBadgeText}>←</Text>
+
+              {/* Question Title */}
+              <Text style={styles.questionTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+
+              {/* Author Info */}
+              <View style={styles.authorRow}>
+                <View style={styles.authorAvatar}>
+                  <Text style={styles.authorAvatarText}>
+                    {item.author.name[0].toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.authorInfo}>
+                  <Text style={styles.authorName}>{item.author.name}</Text>
+                  <View style={styles.metaRow}>
+                    <Ionicons name="time-outline" size={scaleFontSize(12)} color={theme.colors.subtext} />
+                    <MetaText> Just now</MetaText>
+                  </View>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.cardActions}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onUpvote(item.id);
+                  }}
+                >
+                  <Ionicons name="arrow-up-circle-outline" size={scaleFontSize(20)} color="#4A90A4" />
+                  <Text style={styles.actionText}>Upvote</Text>
                 </TouchableOpacity>
-                <Text style={styles.compactTitle}>Q&A Feed</Text>
-                <TouchableOpacity onPress={() => navigation.navigate('Compose', { mode: 'question' })} style={styles.askBadge}>
-                  <Text style={styles.askBadgeText}>+</Text>
+
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onFollow(item.id);
+                  }}
+                >
+                  <Ionicons 
+                    name={item.following ? "bookmark" : "bookmark-outline"} 
+                    size={scaleFontSize(20)} 
+                    color={item.following ? theme.colors.success : "#5B9AB8"} 
+                  />
+                  <Text style={styles.actionText}>
+                    {item.following ? 'Saved' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.answerAction]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    navigation.navigate('Compose', { mode: 'answer', questionId: item.id });
+                  }}
+                >
+                  <Ionicons name="create" size={scaleFontSize(20)} color={theme.colors.primaryText} />
+                  <Text style={styles.answerText}>Answer</Text>
                 </TouchableOpacity>
               </View>
+            </Card>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <MaterialCommunityIcons 
+              name="comment-question-outline" 
+              size={scaleFontSize(64)} 
+              color={theme.colors.subtext} 
+            />
+            <Text style={styles.emptyTitle}>No questions found</Text>
+            <Text style={styles.emptySubtitle}>
+              {query ? 'Try a different search term' : 'Be the first to ask a question!'}
+            </Text>
+            {!query && (
+              <TouchableOpacity 
+                style={styles.emptyButton}
+                onPress={() => navigation.navigate('Compose', { mode: 'question' })}
+              >
+                <Ionicons name="add-circle" size={scaleFontSize(20)} color={theme.colors.primaryText} />
+                <Text style={styles.emptyButtonText}>Ask Question</Text>
+              </TouchableOpacity>
             )}
-            <View style={{ height: theme.spacing(1) }} />
-            <View style={styles.searchBox}>
-              <TextInput
-                placeholder="Search questions"
-                placeholderTextColor={theme.colors.subtext}
-                value={query}
-                onChangeText={setQuery}
-                style={styles.searchInput}
-              />
-            </View>
-            {!isSmartwatch && (
-              <View style={styles.askBox}>
-                <TextInput
-                  placeholder="Ask a question…"
-                  placeholderTextColor={theme.colors.subtext}
-                  value={askText}
-                  onChangeText={setAskText}
-                  style={styles.askInput}
-                />
-                <ButtonPrimary title="Post" onPress={submitQuestion} size="sm" />
-              </View>
-            )}
-            <View style={styles.pillsRow}>
-              <TouchableOpacity onPress={() => setFilter('most')}><View style={[styles.pill, filter==='most' && styles.pillActive]}><Text style={[styles.pillText, filter==='most' && styles.pillTextActive]}>Most Viewed</Text></View></TouchableOpacity>
-              <TouchableOpacity onPress={() => setFilter('nearby')}><View style={[styles.pill, filter==='nearby' && styles.pillActive]}><Text style={[styles.pillText, filter==='nearby' && styles.pillTextActive]}>Nearby</Text></View></TouchableOpacity>
-              <TouchableOpacity onPress={() => setFilter('latest')}><View style={[styles.pill, filter==='latest' && styles.pillActive]}><Text style={[styles.pillText, filter==='latest' && styles.pillTextActive]}>Latest</Text></View></TouchableOpacity>
-            </View>
-            <View style={{ height: theme.spacing(1) }} />
           </View>
         }
-        renderItem={({ item }) => (
-          <View>
-            <Card style={styles.card}>
-              <TouchableOpacity onPress={() => toggleExpand(item.id)} activeOpacity={0.8}>
-                <View style={styles.imageWrap}>
-                  <ImageBackground
-                  source={{ uri: imageFor(item.id) }}
-                  style={styles.cardImage}
-                  imageStyle={{ borderRadius: theme.radius.lg }}
-                  onError={() => setImgFallback((prev) => ({ ...prev, [item.id]: true }))}
-                >
-                  <View style={styles.imageOverlay}>
-                    <Text style={styles.imageTitle} numberOfLines={1}>{item.title}</Text>
-                    <MetaText>{item.topic}  •  {item.answersCount} Answers  •  {item.upvotes} Upvotes</MetaText>
-                  </View>
-                </ImageBackground>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.actions}>
-                {isSmartwatch ? (
-                  <>
-                    <ButtonPrimary title={`👍 ${item.upvotes}`} onPress={() => onUpvote(item.id)} size="sm" style={styles.actionBtnWatch} />
-                    <ButtonSecondary title={expanded[item.id] ? '▼' : '▶'} onPress={() => toggleExpand(item.id)} size="sm" style={styles.actionBtnWatch} />
-                  </>
-                ) : (
-                  <>
-                    <ButtonSecondary title={`Upvote (${item.upvotes})`} onPress={() => onUpvote(item.id)} size="sm" />
-                    <View style={{ width: theme.spacing(1) }} />
-                    <ButtonSecondary title={item.following ? 'Following' : 'Follow'} onPress={() => onFollow(item.id)} size="sm" />
-                    <View style={{ width: theme.spacing(1) }} />
-                    <ButtonPrimary title="Answer" onPress={() => { if (!expanded[item.id]) toggleExpand(item.id); }} size="sm" />
-                    <View style={{ width: theme.spacing(1) }} />
-                    <ButtonSecondary title={expanded[item.id] ? 'Hide' : 'Open'} onPress={() => toggleExpand(item.id)} size="sm" />
-                  </>
-                )}
-              </View>
-              {expanded[item.id] && (
-                <View style={styles.expandArea}>
-                  {answersLoading[item.id] ? (
-                    <MetaText>Loading answers…</MetaText>
-                  ) : (
-                    <>
-                      {(answersMap[item.id] || []).slice(0, 3).map((a) => (
-                        <View key={a.id} style={styles.answerRow}>
-                          <Text style={styles.answerAuthor}>{a.author?.name || 'User'}</Text>
-                          <Text style={styles.answerBody} numberOfLines={3}>{a.body}</Text>
-                        </View>
-                      ))}
-                      <View style={styles.inlineAnswerBox}>
-                        <TextInput
-                          placeholder="Write an answer…"
-                          placeholderTextColor={theme.colors.subtext}
-                          value={answerInputs[item.id] || ''}
-                          onChangeText={(t) => setAnswerInputs((prev) => ({ ...prev, [item.id]: t }))}
-                          style={styles.inlineAnswerInput}
-                          multiline
-                        />
-                        <ButtonSecondary title="Submit" onPress={() => submitAnswer(item.id)} />
-                      </View>
-                      <View style={{ height: theme.spacing(1) }} />
-                      <ButtonSecondary title="View full thread" onPress={() => navigation.navigate('Question', { id: item.id })} />
-                    </>
-                  )}
-                </View>
-              )}
-            </Card>
-          </View>
-        )}
-        ItemSeparatorComponent={() => <View style={{ height: theme.spacing(1) }} />}
-        contentContainerStyle={{ padding: theme.spacing(2) }}
+        ItemSeparatorComponent={() => <View style={{ height: theme.spacing(2) }} />}
+        contentContainerStyle={styles.listContent}
       />
+
+      {/* Inline Question Composer - Bottom */}
+      {!isSmartwatch && (
+        <View style={styles.askComposerBottom}>
+          <TextInput
+            placeholder="Ask a question..."
+            placeholderTextColor={theme.colors.subtext}
+            value={askText}
+            onChangeText={setAskText}
+            style={styles.askInput}
+            multiline
+            maxLength={200}
+          />
+          <TouchableOpacity 
+            style={[styles.askButton, !askText.trim() && styles.askButtonDisabled]}
+            onPress={submitQuestion}
+            disabled={!askText.trim()}
+          >
+            <Ionicons name="send" size={scaleFontSize(20)} color={theme.colors.primaryText} />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.bg },
-  header: { 
-    padding: theme.spacing(2), 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  container: { 
+    flex: 1, 
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    zIndex: 20,
+    elevation: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    ...theme.shadows.sm,
-    backgroundColor: theme.colors.card,
-    borderBottomWidth: 1,
-    borderColor: theme.colors.border,
+    gap: 12,
+    flex: 1,
   },
-  headerActions: { flexDirection: 'row' },
-  title: { ...theme.typography.title as any },
-  card: { 
-    ...theme.shadows.sm,
-  },
-  cardTitle: { ...theme.typography.h2 as any },
-  cardExcerpt: { marginTop: 6, color: theme.colors.text },
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  metaDot: { color: theme.colors.subtext, marginHorizontal: 6 },
-  actions: { flexDirection: 'row', marginTop: theme.spacing(2) },
-  footer: { flexDirection: 'row', justifyContent: 'space-around', padding: theme.spacing(2), borderTopWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.card },
-  greetingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing(2) },
-  hello: { ...theme.typography.title as any },
-  subtitle: { color: theme.colors.subtext },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.colors.border },
-  searchBox: { backgroundColor: theme.colors.card, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: theme.spacing(2), paddingVertical: 10 },
-  searchInput: { color: theme.colors.text },
-  pillsRow: { flexDirection: 'row', marginTop: theme.spacing(2) },
-  pill: { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginRight: theme.spacing(1) },
-  pillActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  pillText: { color: theme.colors.text },
-  pillTextActive: { color: theme.colors.primaryText, fontWeight: '700' },
-  imageWrap: { borderRadius: theme.radius.lg, overflow: 'hidden' },
-  cardImage: { 
-    height: isSmartwatch ? 100 : 180, 
-    justifyContent: 'flex-end',
-  },
-  imageOverlay: { backgroundColor: 'rgba(0,0,0,0.35)', padding: theme.spacing(2) },
-  imageTitle: { 
-    color: '#fff', 
-    fontSize: scaleFontSize(isSmartwatch ? 12 : 16), 
-    fontWeight: '700', 
-    marginBottom: 4,
-  },
-  expandArea: { marginTop: theme.spacing(1) },
-  answerRow: { paddingVertical: 8, borderTopWidth: 1, borderColor: theme.colors.border },
-  answerAuthor: { fontWeight: '600', color: theme.colors.text, marginBottom: 4 },
-  answerBody: { color: theme.colors.subtext },
-  // Brand header styles
-  brandRow: { flexDirection: 'row', alignItems: 'center' },
-  brandLogo: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
-  brandLogoText: { color: theme.colors.primaryText, fontWeight: '800' },
-  brandText: { marginLeft: 8, color: theme.colors.text, fontWeight: '700' },
-  headerCenter: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  headerTitle: { ...theme.typography.title as any, color: theme.colors.text },
-  // Hero header (to match Main)
-  heroWrap: { borderRadius: theme.radius.lg, overflow: 'hidden' },
-  hero: { height: 160, justifyContent: 'flex-end' },
-  heroOverlay: { backgroundColor: 'rgba(0,0,0,0.35)', padding: theme.spacing(2) },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing(1) },
-  backBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.card, alignItems: 'center', justifyContent: 'center' },
-  backBadgeText: { color: theme.colors.text, fontWeight: '800' },
-  brandWord: { color: '#fff', fontWeight: '700', marginLeft: 6 },
-  heroTitle: { 
-    color: '#fff', 
-    fontSize: scaleFontSize(20), 
-    fontWeight: '800',
-  },
-  heroSubtitle: { color: '#E5E7EB', marginTop: 4 },
-  // Ask composer at top
-  askBox: { marginTop: theme.spacing(1), backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing(1), flexDirection: 'row', alignItems: 'center' },
-  askInput: { flex: 1, marginRight: theme.spacing(1), color: theme.colors.text },
-  // Inline answer composer
-  inlineAnswerBox: { marginTop: theme.spacing(1), backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing(1) },
-  inlineAnswerInput: { 
-    minHeight: isSmartwatch ? 40 : 60, 
-    color: theme.colors.text,
-  },
-  // Smartwatch specific styles
-  compactHeader: {
+  headerWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: theme.spacing(1),
-    paddingHorizontal: theme.spacing(0.5),
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md,
-    marginBottom: theme.spacing(1),
+    gap: 12,
   },
-  compactTitle: {
-    fontSize: scaleFontSize(12),
-    fontWeight: '700',
-    color: theme.colors.text,
-    flex: 1,
-    textAlign: 'center',
+  backButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
-  askBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primary,
+  headerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  headerAvatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  askBadgeText: {
-    color: theme.colors.primaryText,
-    fontSize: scaleFontSize(16),
-    fontWeight: '800',
+  headerAvatarText: {
+    color: '#1F2937',
+    fontWeight: '700',
+    fontSize: 16,
   },
-  actionBtnWatch: {
+  hey: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  name: {
+    color: '#1F2937',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  settingsBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing(2),
+    paddingVertical: theme.spacing(1.25),
+    gap: theme.spacing(1),
+    ...theme.shadows.sm,
+    marginTop: 110,
+    marginHorizontal: theme.spacing(2),
+  },
+  searchInput: {
     flex: 1,
-    marginHorizontal: 2,
+    color: theme.colors.text,
+    fontSize: scaleFontSize(14),
+  },
+  filterScrollView: {
+    marginTop: theme.spacing(1),
+    marginBottom: theme.spacing(2),
+  },
+  filterContainer: {
+    paddingHorizontal: theme.spacing(2),
+    paddingVertical: theme.spacing(2),
+    paddingTop: theme.spacing(1),
+    paddingBottom: theme.spacing(15),
+    gap: theme.spacing(1),
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing(2),
+    paddingVertical: theme.spacing(1),
+    borderRadius: theme.radius.full,
+    gap: theme.spacing(0.75),
+    marginRight: theme.spacing(1),
+    ...theme.shadows.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  filterPillActive: {
+    borderColor: 'transparent',
+  },
+  filterText: {
+    fontSize: scaleFontSize(14),
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  filterTextActive: {
+    color: theme.colors.primaryText,
+  },
+  listContent: {
+    padding: theme.spacing(2),
+    paddingTop: theme.spacing(1),
+    paddingBottom: theme.spacing(2),
+  },
+  questionCard: {
+    marginBottom: 0,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing(1.5),
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing(1.5),
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    backgroundColor: theme.colors.bg,
+    paddingHorizontal: theme.spacing(1),
+    paddingVertical: theme.spacing(0.5),
+    borderRadius: theme.radius.md,
+  },
+  statValue: {
+    fontSize: scaleFontSize(12),
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  questionTitle: {
+    fontSize: scaleFontSize(isSmartwatch ? 14 : 18),
+    fontWeight: '700',
+    color: theme.colors.text,
+    lineHeight: scaleFontSize(isSmartwatch ? 18 : 24),
+    marginBottom: theme.spacing(2),
+  },
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing(2),
+    paddingBottom: theme.spacing(2),
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  authorAvatar: {
+    width: scaleFontSize(36),
+    height: scaleFontSize(36),
+    borderRadius: scaleFontSize(18),
+    backgroundColor: '#A9D5E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: theme.spacing(1),
+  },
+  authorAvatarText: {
+    fontSize: scaleFontSize(14),
+    fontWeight: '700',
+    color: '#5B9AB8',
+  },
+  authorInfo: {
+    flex: 1,
+  },
+  authorName: {
+    fontSize: scaleFontSize(14),
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: theme.spacing(1),
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing(1),
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.bg,
+    gap: theme.spacing(0.5),
+  },
+  answerAction: {
+    backgroundColor: '#5B9AB8',
+  },
+  actionText: {
+    fontSize: scaleFontSize(13),
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  answerText: {
+    fontSize: scaleFontSize(13),
+    fontWeight: '600',
+    color: theme.colors.primaryText,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing(8),
+  },
+  emptyTitle: {
+    fontSize: scaleFontSize(20),
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: theme.spacing(2),
+    marginBottom: theme.spacing(1),
+  },
+  emptySubtitle: {
+    fontSize: scaleFontSize(14),
+    color: theme.colors.subtext,
+    marginBottom: theme.spacing(3),
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#5B9AB8',
+    paddingHorizontal: theme.spacing(3),
+    paddingVertical: theme.spacing(1.5),
+    borderRadius: theme.radius.md,
+    gap: theme.spacing(1),
+    ...theme.shadows.md,
+  },
+  emptyButtonText: {
+    fontSize: scaleFontSize(16),
+    fontWeight: '600',
+    color: theme.colors.primaryText,
+  },
+  askComposerBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.card,
+    paddingHorizontal: theme.spacing(2),
+    paddingVertical: theme.spacing(1.5),
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    gap: theme.spacing(1),
+    ...theme.shadows.lg,
+  },
+  askInput: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: scaleFontSize(14),
+    minHeight: scaleFontSize(40),
+    maxHeight: scaleFontSize(80),
+    paddingVertical: theme.spacing(1),
+  },
+  askButton: {
+    backgroundColor: '#5B9AB8',
+    width: scaleFontSize(40),
+    height: scaleFontSize(40),
+    borderRadius: scaleFontSize(20),
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.sm,
+  },
+  askButtonDisabled: {
+    backgroundColor: theme.colors.border,
+    opacity: 0.5,
   },
 });
 
