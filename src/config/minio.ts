@@ -1,14 +1,27 @@
+// Detect if running on web vs native
+const isWeb = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+
+// Use localhost for web, LAN IP for mobile devices
+const NETWORK_IP = '172.16.30.8';
+const MINIO_PORT = '9000';
+const PROXY_PORT = '3001';
+
 export const minioConfig = {
   // Base endpoint for MinIO (no trailing slash)
-  // Prefer LAN IP if you want to test from physical devices on the same network
-  endpoint: (process.env.EXPO_PUBLIC_MINIO_ENDPOINT as string) || 'http://127.0.0.1:9000',
+  // Using LAN IP to work on physical devices on the same network
+  endpoint: (process.env.EXPO_PUBLIC_MINIO_ENDPOINT as string) || 
+    (isWeb ? `http://localhost:${MINIO_PORT}` : `http://${NETWORK_IP}:${MINIO_PORT}`),
   // Public base URL used by the app to render images
-  // Often the same as endpoint + '/' + bucketName
+  // Using LAN IP so phone can access the images
   publicBaseUrl:
-    (process.env.EXPO_PUBLIC_MINIO_PUBLIC_BASE as string) || 'http://127.0.0.1:9000',
-  // Bucket to store app assets
-  bucketName: (process.env.EXPO_PUBLIC_MINIO_BUCKET as string) || 'cancer-app',
-  // Dev credentials (use env vars in production)
+    (process.env.EXPO_PUBLIC_MINIO_PUBLIC_BASE as string) || 
+    (isWeb ? `http://localhost:${MINIO_PORT}` : `http://${NETWORK_IP}:${MINIO_PORT}`),
+  // Proxy URL for uploads (to avoid CORS)
+  proxyUrl: (process.env.EXPO_PUBLIC_PROXY_URL as string) || 
+    (isWeb ? `http://localhost:${PROXY_PORT}` : `http://${NETWORK_IP}:${PROXY_PORT}`),
+  // Bucket to store app assets (created by user)
+  bucketName: (process.env.EXPO_PUBLIC_MINIO_BUCKET as string) || 'test-bucket',
+  // Dev credentials (default MinIO credentials)
   accessKey: (process.env.EXPO_PUBLIC_MINIO_ACCESS_KEY as string) || 'minioadmin',
   secretKey: (process.env.EXPO_PUBLIC_MINIO_SECRET_KEY as string) || 'minioadmin',
 };

@@ -1,4 +1,4 @@
- import React from 'react';
+ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -7,6 +7,7 @@ import { LoadingSpinner } from './src/ui/components';
 import { theme } from './src/ui/theme';
 import { scaleFontSize } from './src/ui/responsive';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { minioConfig } from './src/config/minio';
 
 function Root() {
   console.log('Root component rendering');
@@ -66,6 +67,16 @@ const styles = StyleSheet.create({
 });
 
 export default function App() {
+  useEffect(() => {
+    // Log MinIO configuration on app startup
+    console.log('=== MinIO Configuration ===');
+    console.log('Endpoint:', minioConfig.endpoint);
+    console.log('Public Base:', minioConfig.publicBaseUrl);
+    console.log('Bucket:', minioConfig.bucketName);
+    console.log('Access Key:', minioConfig.accessKey);
+    console.log('==========================');
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

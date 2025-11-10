@@ -299,6 +299,18 @@ Return strict JSON with keys breakfast, lunch, dinner. Each item has: label (Bre
                       </TouchableOpacity>
                     </View>
                   </View>
+                  
+                  {/* Second row with Food Scanner */}
+                  <View style={[styles.actionRow, { marginTop: 20, justifyContent: 'center' }]}>
+                    <View style={styles.actionItem}>
+                      <TouchableOpacity activeOpacity={0.9} style={styles.actionBtn} onPress={() => navigation.navigate('FoodScan', {})}>
+                        <View style={[styles.iconCircle, { backgroundColor: '#FEF3C7' }]}>
+                          <Text style={styles.actionIconEmoji}>🍽️</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={[styles.actionLabel, { marginTop: 8 }]}>Food Scanner</Text>
+                    </View>
+                  </View>
                 </View>
               </View>
 

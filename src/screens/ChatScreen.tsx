@@ -11,6 +11,9 @@ import {
   Animated,
   Easing,
   Dimensions,
+  Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -19,6 +22,9 @@ import { geminiAI, ChatMessage, generateMessageId } from '../services/geminiAI';
 import { useAuth } from '../context/AuthContext';
 import { loadProfile } from '../services/profile';
 import Svg, { Path, Circle } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadImage } from '../services/minioStorage';
+import Markdown from 'react-native-markdown-display';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -55,9 +61,22 @@ const MessageBubble: React.FC<{ item: ChatMessage; index: number }> = ({ item, i
         </View>
       )}
       <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble]}>
-        <Text style={[styles.messageText, isUser ? styles.userText : styles.aiText]}>
-          {item.content}
-        </Text>
+        {(item as any).imageUrl && (
+          <Image 
+            source={{ uri: (item as any).imageUrl }} 
+            style={styles.messageImage}
+            resizeMode="cover"
+          />
+        )}
+        {isUser ? (
+          <Text style={[styles.messageText, styles.userText]}>
+            {item.content}
+          </Text>
+        ) : (
+          <Markdown style={markdownStyles}>
+            {item.content}
+          </Markdown>
+        )}
         <Text style={[styles.timestamp, isUser && styles.userTimestamp]}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
@@ -86,6 +105,8 @@ const ChatScreen: React.FC<Props> = ({ navigation }) => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -142,30 +163,96 @@ const ChatScreen: React.FC<Props> = ({ navigation }) => {
     }, 100);
   };
 
+  const pickImage = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== 'granted') {
+        return Alert.alert('Permission required', 'Please allow photo library access.');
+      }
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    } catch (error: any) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
   const handleSend = async () => {
     const trimmedText = inputText.trim();
-    if (!trimmedText || isLoading) return;
+    if ((!trimmedText && !selectedImage) || isLoading) return;
 
-    const userMessage: ChatMessage = {
+    let imageUrl: string | undefined;
+
+    // Upload image if selected
+    if (selectedImage) {
+      console.log('📤 UPLOADING IMAGE:', selectedImage);
+      try {
+        setIsUploading(true);
+        const filename = `chat-${Date.now()}.jpg`;
+        imageUrl = await uploadImage(selectedImage, 'chat', filename);
+        console.log('✅ IMAGE UPLOADED SUCCESSFULLY:', imageUrl);
+      } catch (error: any) {
+        console.error('❌ Image upload error:', error);
+        Alert.alert('Upload failed', error?.message || 'Could not upload image');
+        setIsUploading(false);
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    } else {
+      console.log('⚠️ NO IMAGE SELECTED');
+    }
+
+    const userMessage: ChatMessage & { imageUrl?: string } = {
       id: generateMessageId(),
       role: 'user',
-      content: trimmedText,
+      content: trimmedText || '📷 [Image]',
       timestamp: Date.now(),
+      imageUrl,
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
+    setSelectedImage(null);
     setIsLoading(true);
     scrollToBottom();
 
     try {
-      let contextualMessage = trimmedText;
-      if (userProfile?.cancerType) {
-        const context = `[User: ${userProfile.cancerType}, Stage ${userProfile.stage || 'unknown'}]\n\n`;
-        contextualMessage = context + trimmedText;
+      let aiResponse: string;
+      
+      // If image is uploaded, use Vision API
+      if (imageUrl) {
+        console.log('🖼️ IMAGE DETECTED - Using Vision API for image analysis');
+        console.log('📍 Image URL:', imageUrl);
+        
+        // Add user context for better analysis
+        let prompt = trimmedText || 'Please analyze this image and provide relevant health insights.';
+        if (userProfile?.cancerType) {
+          prompt = `[Patient context: ${userProfile.cancerType}, Stage ${userProfile.stage || 'unknown'}]\n\n${prompt}`;
+        }
+        
+        console.log('📝 Sending prompt to AI:', prompt);
+        aiResponse = await geminiAI.sendMessageWithImage(prompt, imageUrl);
+        console.log('✅ AI Response received:', aiResponse.substring(0, 100) + '...');
+      } else {
+        // Regular text message
+        let contextualMessage = trimmedText;
+        if (userProfile?.cancerType) {
+          const context = `[User: ${userProfile.cancerType}, Stage ${userProfile.stage || 'unknown'}]\n\n`;
+          contextualMessage = context + trimmedText;
+        }
+        
+        aiResponse = await geminiAI.sendMessage(contextualMessage);
       }
-
-      const aiResponse = await geminiAI.sendMessage(contextualMessage);
+      
       const assistantMessage: ChatMessage = {
         id: generateMessageId(),
         role: 'assistant',
@@ -174,11 +261,12 @@ const ChatScreen: React.FC<Props> = ({ navigation }) => {
       };
       setMessages((prev) => [...prev, assistantMessage]);
       scrollToBottom();
-    } catch (error) {
+    } catch (error: any) {
+      console.error('AI Error:', error);
       const errorMessage: ChatMessage = {
         id: generateMessageId(),
         role: 'assistant',
-        content: '⚠️ Sorry, I encountered an error. Please try again.',
+        content: error?.message || '⚠️ Sorry, I encountered an error. Please try again.',
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -249,7 +337,36 @@ const ChatScreen: React.FC<Props> = ({ navigation }) => {
 
           {/* Input Area */}
           <View style={styles.inputContainer}>
+            {/* Image Preview */}
+            {selectedImage && (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Text style={styles.removeImageText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            {/* Upload Progress */}
+            {isUploading && (
+              <View style={styles.uploadingContainer}>
+                <ActivityIndicator color="#F9A8D4" />
+                <Text style={styles.uploadingText}>Uploading image...</Text>
+              </View>
+            )}
+
             <View style={styles.inputWrapper}>
+              <TouchableOpacity
+                style={styles.photoButton}
+                onPress={pickImage}
+                disabled={isLoading || isUploading}
+              >
+                <Text style={styles.photoButtonText}>📷</Text>
+              </TouchableOpacity>
+              
               <TextInput
                 style={styles.input}
                 placeholder="Type your message..."
@@ -258,12 +375,13 @@ const ChatScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={setInputText}
                 multiline
                 maxLength={500}
-                editable={!isLoading}
+                editable={!isLoading && !isUploading}
               />
+              
               <TouchableOpacity
-                style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
+                style={[styles.sendButton, ((!inputText.trim() && !selectedImage) || isLoading || isUploading) && styles.sendButtonDisabled]}
                 onPress={handleSend}
-                disabled={!inputText.trim() || isLoading}
+                disabled={(!inputText.trim() && !selectedImage) || isLoading || isUploading}
               >
                 <Text style={styles.sendButtonText}>→</Text>
               </TouchableOpacity>
@@ -511,6 +629,162 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  // Photo button
+  photoButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  photoButtonText: {
+    fontSize: 22,
+  },
+  // Image in message
+  messageImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  // Image preview
+  imagePreviewContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  imagePreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#F9A8D4',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  removeImageText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  // Uploading indicator
+  uploadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  uploadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
 });
+
+// Markdown styles for AI responses
+const markdownStyles = {
+  body: {
+    color: '#1F2937',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+    color: '#1F2937',
+  },
+  strong: {
+    fontWeight: '700' as '700',
+    color: '#111827',
+  },
+  em: {
+    fontStyle: 'italic' as 'italic',
+    color: '#374151',
+  },
+  code_inline: {
+    backgroundColor: '#F3F4F6',
+    color: '#EF4444',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontFamily: 'monospace',
+    fontSize: 14,
+  },
+  code_block: {
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 8,
+    fontFamily: 'monospace',
+    fontSize: 14,
+  },
+  fence: {
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 8,
+    fontFamily: 'monospace',
+    fontSize: 14,
+  },
+  bullet_list: {
+    marginVertical: 8,
+  },
+  ordered_list: {
+    marginVertical: 8,
+  },
+  list_item: {
+    marginVertical: 4,
+    color: '#1F2937',
+  },
+  link: {
+    color: '#3B82F6',
+    textDecorationLine: 'underline' as 'underline',
+  },
+  blockquote: {
+    backgroundColor: '#F9FAFB',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F9A8D4',
+    paddingLeft: 12,
+    paddingVertical: 8,
+    marginVertical: 8,
+    fontStyle: 'italic' as 'italic',
+  },
+  heading1: {
+    fontSize: 20,
+    fontWeight: '700' as '700',
+    marginTop: 12,
+    marginBottom: 8,
+    color: '#111827',
+  },
+  heading2: {
+    fontSize: 18,
+    fontWeight: '700' as '700',
+    marginTop: 10,
+    marginBottom: 6,
+    color: '#111827',
+  },
+  heading3: {
+    fontSize: 16,
+    fontWeight: '700' as '700',
+    marginTop: 8,
+    marginBottom: 4,
+    color: '#111827',
+  },
+};
 
 export default ChatScreen;

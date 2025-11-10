@@ -17,6 +17,7 @@ import ChatScreen from '../screens/ChatScreen';
 import NutritionCheckScreen from '../screens/NutritionCheckScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import OnboardingSummaryScreen from '../screens/OnboardingSummaryScreen';
+import FoodScanScreen from '../screens/FoodScanScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   Feed: undefined;
   Chat: undefined;
   NutritionCheck: undefined;
+  FoodScan: undefined;
   Question: { id: string } | undefined;
   Compose: { mode: 'question' | 'answer'; questionId?: string } | undefined;
   Profile: { userId?: string } | undefined;
@@ -76,6 +78,7 @@ const AppNavigator: React.FC<Props> = ({ isAuthenticated, onboardingNeeded }) =>
           />
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
+          <Stack.Screen name="FoodScan" component={FoodScanScreen} />
           <Stack.Screen 
             name="Question" 
             component={QuestionScreen}
@@ -105,6 +108,7 @@ const AppNavigator: React.FC<Props> = ({ isAuthenticated, onboardingNeeded }) =>
           />
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
+          <Stack.Screen name="FoodScan" component={FoodScanScreen} />
           <Stack.Screen 
             name="Question" 
             component={QuestionScreen}

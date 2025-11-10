@@ -46,6 +46,55 @@ export async function initializeMinIOBucket(): Promise<void> {
 }
 
 /**
+ * Upload via proxy server (workaround for CORS)
+ * @param uri - Local file URI
+ * @param folder - Folder name (e.g., "chat", "users")
+ * @param filename - File name
+ * @returns Public URL to the uploaded file
+ */
+export async function uploadViaProxy(uri: string, folder: string, filename: string): Promise<string> {
+  try {
+    console.log('uploadViaProxy called with:', { uri, folder, filename });
+    
+    // Fetch the file as blob
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    console.log('Blob fetched:', { type: blob.type, size: blob.size });
+    
+    // Create FormData
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    formData.append('folder', folder);
+    formData.append('filename', filename);
+    
+    // Use proxy server from config (detects web vs mobile)
+    const proxyUrl = `${minioConfig.proxyUrl}/upload`;
+    console.log('Uploading via proxy:', proxyUrl);
+    
+    const uploadResponse = await fetch(proxyUrl, {
+      method: 'POST',
+      body: formData,
+    });
+
+    console.log('Proxy response status:', uploadResponse.status);
+    
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error('Proxy error response:', errorText);
+      throw new Error(`Upload via proxy failed (${uploadResponse.status}): ${errorText}`);
+    }
+
+    const result = await uploadResponse.json();
+    console.log('Upload successful via proxy:', result);
+    return result.url;
+    
+  } catch (error: any) {
+    console.error('Error uploading via proxy:', error);
+    throw new Error(`Proxy upload failed: ${error?.message || 'Unknown error'}`);
+  }
+}
+
+/**
  * Upload a file to MinIO storage
  * @param uri - Local file URI (from image picker or camera)
  * @param path - Remote path in MinIO bucket (e.g., "users/123/avatar.jpg")
@@ -200,8 +249,9 @@ function getBasicAuthHeader(): string {
  * @returns Public URL to the uploaded avatar
  */
 export async function uploadAvatar(uri: string, userId: string): Promise<string> {
-  const path = `users/${userId}/avatar.jpg`;
-  return uploadToMinIO(uri, path);
+  const filename = 'avatar.jpg';
+  const folder = `users/${userId}`;
+  return uploadViaProxy(uri, folder, filename);
 }
 
 /**
@@ -216,8 +266,7 @@ export async function uploadImage(
   folder: string,
   filename: string
 ): Promise<string> {
-  const path = `${folder}/${filename}`;
-  return uploadToMinIO(uri, path);
+  return uploadViaProxy(uri, folder, filename);
 }
 
 // ===== AWS SigV4 helpers (S3 compatible) =====
