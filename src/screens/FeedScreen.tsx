@@ -1,42 +1,69 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ScrollView, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  TextInput,
+  Image,
+  StatusBar,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useAuth } from '../context/AuthContext';
-import { getQuestions, toggleFollow, upvoteQuestionOnce, Question, seedSampleData, addQuestion } from '../data/store';
-import { Card, Tag, MetaText } from '../ui/components';
+import {
+  getQuestions,
+  toggleFollow,
+  upvoteQuestionOnce,
+  Question,
+  Answer,
+  addQuestion,
+  getAnswersFor,
+  addAnswer,
+} from '../data/store';
 import { theme } from '../ui/theme';
-import { isSmartwatch, scaleFontSize } from '../ui/responsive';
-import Svg, { Path } from 'react-native-svg';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Feed'>;
 
-const FeedScreen: React.FC<Props> = ({ navigation }) => {
+const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   const { user } = useAuth();
   const [items, setItems] = useState<Question[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'most' | 'nearby' | 'latest'>('most');
+  const [loading, setLoading] = useState(true);
   const [askText, setAskText] = useState('');
+  const [showComposer, setShowComposer] = useState(false);
+  const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
+  const [answerText, setAnswerText] = useState('');
+  const [showAnswersForQuestion, setShowAnswersForQuestion] = useState<string | null>(null);
+  const [answersMap, setAnswersMap] = useState<Record<string, Answer[]>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await getQuestions();
-        setItems(data);
-      } catch (e) {
-        // noop
-      }
-    })();
+    loadQuestions();
   }, []);
+
+  const loadQuestions = async () => {
+    try {
+      setLoading(true);
+      const data = await getQuestions();
+      setItems(data);
+    } catch (e) {
+      console.error('Failed to load questions:', e);
+      Alert.alert('Error', 'Failed to load questions. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const data = await getQuestions();
-      setItems(data);
+      await loadQuestions();
     } finally {
       setRefreshing(false);
     }
@@ -44,21 +71,21 @@ const FeedScreen: React.FC<Props> = ({ navigation }) => {
 
   const onFollow = async (id: string) => {
     toggleFollow(id);
-    const data = await getQuestions();
-    setItems(data);
+    await loadQuestions();
   };
 
   const onUpvote = async (id: string) => {
     try {
       const res = await upvoteQuestionOnce(id);
       if (res?.changed) {
-        setItems((prev) => prev.map((q) => (q.id === id ? { ...q, upvotes: q.upvotes + 1 } : q)));
+        setItems((prev) =>
+          prev.map((q) => (q.id === id ? { ...q, upvotes: q.upvotes + 1 } : q))
+        );
       }
     } catch (e: any) {
-      Alert.alert('Upvote failed', e?.message || 'Please check Firestore rules for votes collection.');
+      Alert.alert('Error', 'Failed to upvote');
     } finally {
-      const data = await getQuestions();
-      setItems(data);
+      await loadQuestions();
     }
   };
 
@@ -68,569 +95,741 @@ const FeedScreen: React.FC<Props> = ({ navigation }) => {
       Alert.alert('Empty question', 'Please enter a question');
       return;
     }
-    try {
-      await addQuestion(text);
-      setAskText('');
-      await onRefresh();
-      Alert.alert('Success', 'Your question has been posted!');
-    } catch (e: any) {
-      Alert.alert('Unable to post', e?.message || 'Try again later.');
+    if (text.length < 10) {
+      Alert.alert('Too short', 'Please write at least 10 characters');
+      return;
+    }
+    
+    Alert.alert(
+      'Post Question?',
+      'Your question will be visible to the community.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Post',
+          onPress: async () => {
+            try {
+              await addQuestion(text);
+              setAskText('');
+              setShowComposer(false);
+              await loadQuestions();
+              // Show success toast-style
+              Alert.alert('✅ Posted!', 'Your question is now live');
+            } catch (e: any) {
+              Alert.alert('Unable to post', e?.message || 'Try again later.');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleToggleAnswer = (questionId: string) => {
+    if (expandedQuestionId === questionId) {
+      setExpandedQuestionId(null);
+      setAnswerText('');
+    } else {
+      setExpandedQuestionId(questionId);
     }
   };
 
-  const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()));
+  const submitAnswer = async (questionId: string) => {
+    if (!answerText.trim()) {
+      Alert.alert('Empty answer', 'Please enter your answer');
+      return;
+    }
+    try {
+      console.log('Submitting answer:', { questionId, answerText: answerText.substring(0, 50) });
+      await addAnswer(questionId, answerText);
+      console.log('Answer submitted successfully');
+      Alert.alert('Success', 'Your answer has been posted!');
+      setAnswerText('');
+      setExpandedQuestionId(null);
+      // Reload answers for this question
+      await loadAnswersForQuestion(questionId);
+      await loadQuestions();
+    } catch (e: any) {
+      console.error('Error submitting answer:', e);
+      Alert.alert('Error', e?.message || 'Failed to post answer');
+    }
+  };
 
-  return (
-    <View style={styles.container}>
-      {/* Header like MainScreen */}
-      <View style={styles.header}>
-        <View style={styles.headerWrap}>
-          <TouchableOpacity onPress={() => navigation.navigate('Main')} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={scaleFontSize(20)} color="#6B7280" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.headerRow} activeOpacity={0.85}>
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.headerAvatar} />
-            ) : (
-              <View style={styles.headerAvatarFallback}>
-                <Text style={styles.headerAvatarText}>{(user?.displayName || 'U').slice(0,1).toUpperCase()}</Text>
-              </View>
-            )}
-            <View>
-              <Text style={styles.hey}>Hey</Text>
-              <Text style={styles.name} numberOfLines={1}>{user?.displayName || 'Member'}</Text>
-            </View>
-          </TouchableOpacity>
+  const loadAnswersForQuestion = async (questionId: string) => {
+    try {
+      const answers = await getAnswersFor(questionId);
+      setAnswersMap(prev => ({ ...prev, [questionId]: answers }));
+    } catch (e) {
+      console.error('Failed to load answers:', e);
+    }
+  };
 
-          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.settingsBtn} activeOpacity={0.85}>
-            <Svg width={34} height={34} viewBox="0 0 34 34">
-              <Path d="M6 10 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-              <Path d="M6 17 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-              <Path d="M6 24 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-            </Svg>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const toggleShowAnswers = async (questionId: string) => {
+    if (showAnswersForQuestion === questionId) {
+      setShowAnswersForQuestion(null);
+    } else {
+      setShowAnswersForQuestion(questionId);
+      if (!answersMap[questionId]) {
+        await loadAnswersForQuestion(questionId);
+      }
+    }
+  };
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={scaleFontSize(20)} color={theme.colors.subtext} />
-        <TextInput
-          placeholder="Search questions..."
-          placeholderTextColor={theme.colors.subtext}
-          value={query}
-          onChangeText={setQuery}
-          style={styles.searchInput}
-        />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
-            <Ionicons name="close-circle" size={scaleFontSize(20)} color={theme.colors.subtext} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Filter Pills */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        contentContainerStyle={styles.filterContainer}
-        style={styles.filterScrollView}
-      >
-        <TouchableOpacity onPress={() => setFilter('most')}>
-          <LinearGradient
-            colors={filter === 'most' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
-            style={[styles.filterPill, filter === 'most' && styles.filterPillActive]}
-          >
-            <MaterialCommunityIcons 
-              name="fire" 
-              size={scaleFontSize(16)} 
-              color={filter === 'most' ? theme.colors.primaryText : theme.colors.text} 
-            />
-            <Text style={[styles.filterText, filter === 'most' && styles.filterTextActive]}>
-              Most Viewed
+  const renderPost = ({ item }: { item: Question }) => (
+    <View style={styles.postCard}>
+      {/* Post Header */}
+      <View style={styles.postHeader}>
+        <View style={styles.avatarContainer}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {item.author?.name?.charAt(0).toUpperCase() || 'U'}
             </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setFilter('nearby')}>
-          <LinearGradient
-            colors={filter === 'nearby' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
-            style={[styles.filterPill, filter === 'nearby' && styles.filterPillActive]}
-          >
-            <MaterialCommunityIcons 
-              name="map-marker" 
-              size={scaleFontSize(16)} 
-              color={filter === 'nearby' ? theme.colors.primaryText : theme.colors.text} 
-            />
-            <Text style={[styles.filterText, filter === 'nearby' && styles.filterTextActive]}>
-              Nearby
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setFilter('latest')}>
-          <LinearGradient
-            colors={filter === 'latest' ? ['#5B9AB8', '#4A90A4'] : [theme.colors.card, theme.colors.card]}
-            style={[styles.filterPill, filter === 'latest' && styles.filterPillActive]}
-          >
-            <MaterialCommunityIcons 
-              name="clock-outline" 
-              size={scaleFontSize(16)} 
-              color={filter === 'latest' ? theme.colors.primaryText : theme.colors.text} 
-            />
-            <Text style={[styles.filterText, filter === 'latest' && styles.filterTextActive]}>
-              Latest
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {!isSmartwatch && (
-          <TouchableOpacity onPress={async () => { await seedSampleData(); await onRefresh(); }}>
-            <View style={styles.filterPill}>
-              <MaterialCommunityIcons name="seed" size={scaleFontSize(16)} color={theme.colors.accent} />
-              <Text style={styles.filterText}>Seed Data</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
-
-      {/* Questions List */}
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('Question', { id: item.id })}
-            activeOpacity={0.7}
-          >
-            <Card elevated style={styles.questionCard}>
-              {/* Header with Topic and Stats */}
-              <View style={styles.cardHeader}>
-                <Tag text={item.topic} />
-                <View style={styles.statsRow}>
-                  <View style={styles.statItem}>
-                    <Ionicons name="chatbubble" size={scaleFontSize(14)} color="#5B9AB8" />
-                    <Text style={styles.statValue}>{item.answersCount}</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Ionicons name="arrow-up-circle" size={scaleFontSize(14)} color="#4A90A4" />
-                    <Text style={styles.statValue}>{item.upvotes}</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Question Title */}
-              <Text style={styles.questionTitle} numberOfLines={2}>
-                {item.title}
-              </Text>
-
-              {/* Author Info */}
-              <View style={styles.authorRow}>
-                <View style={styles.authorAvatar}>
-                  <Text style={styles.authorAvatarText}>
-                    {item.author.name[0].toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.authorInfo}>
-                  <Text style={styles.authorName}>{item.author.name}</Text>
-                  <View style={styles.metaRow}>
-                    <Ionicons name="time-outline" size={scaleFontSize(12)} color={theme.colors.subtext} />
-                    <MetaText> Just now</MetaText>
-                  </View>
-                </View>
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.cardActions}>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    onUpvote(item.id);
-                  }}
-                >
-                  <Ionicons name="arrow-up-circle-outline" size={scaleFontSize(20)} color="#4A90A4" />
-                  <Text style={styles.actionText}>Upvote</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    onFollow(item.id);
-                  }}
-                >
-                  <Ionicons 
-                    name={item.following ? "bookmark" : "bookmark-outline"} 
-                    size={scaleFontSize(20)} 
-                    color={item.following ? theme.colors.success : "#5B9AB8"} 
-                  />
-                  <Text style={styles.actionText}>
-                    {item.following ? 'Saved' : 'Save'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.answerAction]}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    navigation.navigate('Compose', { mode: 'answer', questionId: item.id });
-                  }}
-                >
-                  <Ionicons name="create" size={scaleFontSize(20)} color={theme.colors.primaryText} />
-                  <Text style={styles.answerText}>Answer</Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons 
-              name="comment-question-outline" 
-              size={scaleFontSize(64)} 
-              color={theme.colors.subtext} 
-            />
-            <Text style={styles.emptyTitle}>No questions found</Text>
-            <Text style={styles.emptySubtitle}>
-              {query ? 'Try a different search term' : 'Be the first to ask a question!'}
-            </Text>
-            {!query && (
-              <TouchableOpacity 
-                style={styles.emptyButton}
-                onPress={() => navigation.navigate('Compose', { mode: 'question' })}
-              >
-                <Ionicons name="add-circle" size={scaleFontSize(20)} color={theme.colors.primaryText} />
-                <Text style={styles.emptyButtonText}>Ask Question</Text>
-              </TouchableOpacity>
-            )}
           </View>
-        }
-        ItemSeparatorComponent={() => <View style={{ height: theme.spacing(2) }} />}
-        contentContainerStyle={styles.listContent}
-      />
+        </View>
+        <View style={styles.postHeaderInfo}>
+          <Text style={styles.authorName}>{item.author?.name || 'Anonymous'}</Text>
+          <Text style={styles.postTime}>
+            {item.createdAt
+              ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : 'Recently'}
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.moreButton}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.subtext} />
+        </TouchableOpacity>
+      </View>
 
-      {/* Inline Question Composer - Bottom */}
-      {!isSmartwatch && (
-        <View style={styles.askComposerBottom}>
+      {/* Post Content */}
+      <View style={styles.postContent}>
+        <Text style={styles.postTitle}>{item.title}</Text>
+        {item.topic && (
+          <View style={styles.tagsContainer}>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>#{item.topic}</Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Post Stats */}
+      <View style={styles.postStats}>
+        <View style={styles.statItem}>
+          <Ionicons name="heart" size={16} color={theme.colors.danger} />
+          <Text style={styles.statText}>{item.upvotes || 0}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.statItem}
+          onPress={(e) => {
+            e.stopPropagation();
+            toggleShowAnswers(item.id);
+          }}
+        >
+          <Ionicons name="chatbubble" size={16} color={theme.colors.subtext} />
+          <Text style={styles.statText}>{item.answersCount || 0} answers</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Post Actions */}
+      <View style={styles.postActions}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            onUpvote(item.id);
+          }}
+        >
+          <Ionicons name="heart-outline" size={20} color={theme.colors.subtext} />
+          <Text style={styles.actionText}>Like</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleToggleAnswer(item.id);
+          }}
+        >
+          <Ionicons name="chatbubble-outline" size={20} color={theme.colors.subtext} />
+          <Text style={styles.actionText}>Answer</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton}>
+          <Ionicons name="share-outline" size={20} color={theme.colors.subtext} />
+          <Text style={styles.actionText}>Share</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Display Answers */}
+      {showAnswersForQuestion === item.id && answersMap[item.id] && answersMap[item.id].length > 0 && (
+        <View style={styles.answersSection}>
+          <View style={styles.answersSectionHeader}>
+            <Text style={styles.answersSectionTitle}>
+              {answersMap[item.id].length} {answersMap[item.id].length === 1 ? 'Answer' : 'Answers'}
+            </Text>
+          </View>
+          {answersMap[item.id].map((answer) => (
+            <View key={answer.id} style={styles.answerItem}>
+              <View style={styles.answerItemHeader}>
+                <View style={styles.answerItemAvatar}>
+                  <Text style={styles.answerItemAvatarText}>
+                    {answer.author?.name?.charAt(0).toUpperCase() || 'U'}
+                  </Text>
+                </View>
+                <View style={styles.answerItemInfo}>
+                  <Text style={styles.answerItemAuthor}>{answer.author?.name || 'Anonymous'}</Text>
+                  <Text style={styles.answerItemTime}>
+                    {answer.createdAt
+                      ? new Date(answer.createdAt.seconds * 1000).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : 'Recently'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.answerItemBody}>{answer.body}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Inline Answer Box */}
+      {expandedQuestionId === item.id && (
+        <View style={styles.answerBox}>
+          <View style={styles.answerHeader}>
+            <View style={styles.answerAvatar}>
+              <Text style={styles.answerAvatarText}>
+                {user?.displayName?.charAt(0).toUpperCase() || 'U'}
+              </Text>
+            </View>
+            <Text style={styles.answerLabel}>Write your answer...</Text>
+          </View>
           <TextInput
-            placeholder="Ask a question..."
+            style={styles.answerInput}
+            placeholder="Share your thoughts and help others..."
+            placeholderTextColor={theme.colors.subtext}
+            value={answerText}
+            onChangeText={setAnswerText}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+            maxLength={500}
+            autoFocus
+          />
+          <Text style={styles.characterCount}>
+            {answerText.length}/500
+          </Text>
+          <View style={styles.answerActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setExpandedQuestionId(null);
+                setAnswerText('');
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.submitAnswerButton}
+              onPress={() => submitAnswer(item.id)}
+            >
+              <Text style={styles.submitAnswerButtonText}>Post Answer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  const ListHeader = () => (
+    <View>
+      {/* Composer */}
+      {showComposer ? (
+        <View style={styles.composer}>
+          <View style={styles.composerHeader}>
+            <Text style={styles.composerTitle}>Create Post</Text>
+            <TouchableOpacity onPress={() => setShowComposer(false)}>
+              <Ionicons name="close" size={24} color={theme.colors.subtext} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.composerInput}
+            placeholder="What's on your mind?"
             placeholderTextColor={theme.colors.subtext}
             value={askText}
             onChangeText={setAskText}
-            style={styles.askInput}
             multiline
-            maxLength={200}
+            numberOfLines={4}
+            textAlignVertical="top"
+            maxLength={300}
           />
+          <Text style={styles.characterCount}>
+            {askText.length}/300 characters
+          </Text>
           <TouchableOpacity 
-            style={[styles.askButton, !askText.trim() && styles.askButtonDisabled]}
+            style={[styles.postButton, askText.length < 10 && styles.postButtonDisabled]} 
             onPress={submitQuestion}
-            disabled={!askText.trim()}
+            disabled={askText.length < 10}
           >
-            <Ionicons name="send" size={scaleFontSize(20)} color={theme.colors.primaryText} />
+            <Text style={styles.postButtonText}>Post</Text>
           </TouchableOpacity>
         </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.quickComposer}
+          onPress={() => setShowComposer(true)}
+        >
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user?.displayName?.charAt(0).toUpperCase() || 'U'}
+            </Text>
+          </View>
+          <Text style={styles.quickComposerText}>What's on your mind?</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Separator */}
+      <View style={styles.separator} />
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Community</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="search" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('Profile', {})}
+          >
+            <Ionicons name="person-circle" size={28} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Feed */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading questions...</Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="chatbubbles-outline" size={80} color={theme.colors.subtext} />
+          <Text style={styles.emptyTitle}>No Questions Yet</Text>
+          <Text style={styles.emptyText}>
+            Be the first to ask a question!
+          </Text>
+          <TouchableOpacity 
+            style={styles.emptyButton}
+            onPress={() => setShowComposer(true)}
+          >
+            <Text style={styles.emptyButtonText}>Ask Question</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          renderItem={renderPost}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={ListHeader}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+            />
+          }
+          contentContainerStyle={styles.feedContent}
+          showsVerticalScrollIndicator={false}
+        />
       )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FFFFFF',
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
   },
   header: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    zIndex: 20,
-    elevation: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  headerWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  backButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  headerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-  },
-  headerAvatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerAvatarText: {
-    color: '#1F2937',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  hey: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  name: {
-    color: '#1F2937',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  settingsBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: theme.spacing(2),
-    paddingVertical: theme.spacing(1.25),
-    gap: theme.spacing(1),
-    ...theme.shadows.sm,
-    marginTop: 110,
-    marginHorizontal: theme.spacing(2),
-  },
-  searchInput: {
-    flex: 1,
-    color: theme.colors.text,
-    fontSize: scaleFontSize(14),
-  },
-  filterScrollView: {
-    marginTop: theme.spacing(1),
-    marginBottom: theme.spacing(2),
-  },
-  filterContainer: {
-    paddingHorizontal: theme.spacing(2),
-    paddingVertical: theme.spacing(2),
-    paddingTop: theme.spacing(1),
-    paddingBottom: theme.spacing(15),
-    gap: theme.spacing(1),
-  },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing(2),
-    paddingVertical: theme.spacing(1),
-    borderRadius: theme.radius.full,
-    gap: theme.spacing(0.75),
-    marginRight: theme.spacing(1),
-    ...theme.shadows.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  filterPillActive: {
-    borderColor: 'transparent',
-  },
-  filterText: {
-    fontSize: scaleFontSize(14),
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  filterTextActive: {
-    color: theme.colors.primaryText,
-  },
-  listContent: {
-    padding: theme.spacing(2),
-    paddingTop: theme.spacing(1),
-    paddingBottom: theme.spacing(2),
-  },
-  questionCard: {
-    marginBottom: 0,
-  },
-  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing(1.5),
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: theme.spacing(1.5),
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing(0.5),
-    backgroundColor: theme.colors.bg,
-    paddingHorizontal: theme.spacing(1),
-    paddingVertical: theme.spacing(0.5),
-    borderRadius: theme.radius.md,
-  },
-  statValue: {
-    fontSize: scaleFontSize(12),
-    fontWeight: '700',
-    color: theme.colors.text,
-  },
-  questionTitle: {
-    fontSize: scaleFontSize(isSmartwatch ? 14 : 18),
-    fontWeight: '700',
-    color: theme.colors.text,
-    lineHeight: scaleFontSize(isSmartwatch ? 18 : 24),
-    marginBottom: theme.spacing(2),
-  },
-  authorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing(2),
-    paddingBottom: theme.spacing(2),
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  authorAvatar: {
-    width: scaleFontSize(36),
-    height: scaleFontSize(36),
-    borderRadius: scaleFontSize(18),
-    backgroundColor: '#A9D5E8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: theme.spacing(1),
-  },
-  authorAvatarText: {
-    fontSize: scaleFontSize(14),
+  headerTitle: {
+    fontSize: 24,
     fontWeight: '700',
-    color: '#5B9AB8',
+    color: theme.colors.text,
   },
-  authorInfo: {
+  headerRight: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedContent: {
+    paddingBottom: 16,
+  },
+  quickComposer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    gap: 12,
+  },
+  quickComposerText: {
+    flex: 1,
+    fontSize: 16,
+    color: theme.colors.subtext,
+  },
+  composer: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+  },
+  composerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  composerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  composerInput: {
+    fontSize: 16,
+    color: theme.colors.text,
+    minHeight: 100,
+    marginBottom: 16,
+  },
+  postButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  postButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  separator: {
+    height: 8,
+    backgroundColor: theme.colors.bg,
+  },
+  postCard: {
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingBottom: 12,
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  postHeaderInfo: {
     flex: 1,
   },
   authorName: {
-    fontSize: scaleFontSize(14),
+    fontSize: 15,
     fontWeight: '600',
     color: theme.colors.text,
     marginBottom: 2,
   },
-  metaRow: {
-    flexDirection: 'row',
+  postTime: {
+    fontSize: 13,
+    color: theme.colors.subtext,
+  },
+  moreButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  cardActions: {
+  postContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  postTitle: {
+    fontSize: 15,
+    color: theme.colors.text,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  tagsContainer: {
     flexDirection: 'row',
-    gap: theme.spacing(1),
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tag: {
+    backgroundColor: theme.colors.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.primary,
+  },
+  postStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 16,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statText: {
+    fontSize: 13,
+    color: theme.colors.subtext,
+  },
+  postActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingVertical: 4,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: theme.spacing(1),
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.bg,
-    gap: theme.spacing(0.5),
-  },
-  answerAction: {
-    backgroundColor: '#5B9AB8',
+    paddingVertical: 8,
+    gap: 6,
   },
   actionText: {
-    fontSize: scaleFontSize(13),
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  answerText: {
-    fontSize: scaleFontSize(13),
-    fontWeight: '600',
-    color: theme.colors.primaryText,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: theme.spacing(8),
-  },
-  emptyTitle: {
-    fontSize: scaleFontSize(20),
-    fontWeight: '700',
-    color: theme.colors.text,
-    marginTop: theme.spacing(2),
-    marginBottom: theme.spacing(1),
-  },
-  emptySubtitle: {
-    fontSize: scaleFontSize(14),
+    fontSize: 14,
+    fontWeight: '500',
     color: theme.colors.subtext,
-    marginBottom: theme.spacing(3),
   },
-  emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#5B9AB8',
-    paddingHorizontal: theme.spacing(3),
-    paddingVertical: theme.spacing(1.5),
-    borderRadius: theme.radius.md,
-    gap: theme.spacing(1),
-    ...theme.shadows.md,
-  },
-  emptyButtonText: {
-    fontSize: scaleFontSize(16),
-    fontWeight: '600',
-    color: theme.colors.primaryText,
-  },
-  askComposerBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    paddingHorizontal: theme.spacing(2),
-    paddingVertical: theme.spacing(1.5),
+  // Inline Answer Box
+  answerBox: {
+    padding: 16,
+    backgroundColor: theme.colors.bg,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    gap: theme.spacing(1),
-    ...theme.shadows.lg,
   },
-  askInput: {
-    flex: 1,
-    color: theme.colors.text,
-    fontSize: scaleFontSize(14),
-    minHeight: scaleFontSize(40),
-    maxHeight: scaleFontSize(80),
-    paddingVertical: theme.spacing(1),
-  },
-  askButton: {
-    backgroundColor: '#5B9AB8',
-    width: scaleFontSize(40),
-    height: scaleFontSize(40),
-    borderRadius: scaleFontSize(20),
+  answerHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  answerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primary,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  answerAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  answerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  answerInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 12,
+    fontSize: 15,
+    color: theme.colors.text,
+    minHeight: 80,
+    marginBottom: 12,
+  },
+  answerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  cancelButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: theme.colors.bg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.subtext,
+  },
+  submitAnswerButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: theme.colors.primary,
+  },
+  submitAnswerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Answers Display Section
+  answersSection: {
+    padding: 16,
+    backgroundColor: theme.colors.bg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  answersSectionHeader: {
+    marginBottom: 12,
+  },
+  answersSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  answerItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  answerItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  answerItemAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  answerItemAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  answerItemInfo: {
+    flex: 1,
+  },
+  answerItemAuthor: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  answerItemTime: {
+    fontSize: 12,
+    color: theme.colors.subtext,
+  },
+  answerItemBody: {
+    fontSize: 14,
+    color: theme.colors.text,
+    lineHeight: 20,
+  },
+  // Character counter
+  characterCount: {
+    fontSize: 12,
+    color: theme.colors.subtext,
+    textAlign: 'right',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  // Loading state
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: theme.colors.subtext,
+  },
+  // Empty state
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: theme.colors.subtext,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 24,
     ...theme.shadows.sm,
   },
-  askButtonDisabled: {
-    backgroundColor: theme.colors.border,
+  emptyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Post button disabled state
+  postButtonDisabled: {
+    backgroundColor: theme.colors.subtext,
     opacity: 0.5,
   },
 });
 
-export default FeedScreen;
+export default FeedScreenNew;

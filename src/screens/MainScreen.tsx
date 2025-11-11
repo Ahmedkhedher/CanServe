@@ -1,549 +1,747 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Dimensions, View, Text, Image, TouchableOpacity, Animated, Easing, ScrollView } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+  StatusBar,
+  Image,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { theme } from '../ui/theme';
 import { useAuth } from '../context/AuthContext';
+import type { Appointment } from '../services/appointments';
+import { getUserAppointments } from '../services/appointments';
+import { loadProfile } from '../services/profile';
+
+const { width } = Dimensions.get('window');
 
 const MainScreen: React.FC<any> = ({ navigation }) => {
-  console.log('MainScreen rendering');
   const { user } = useAuth();
-  console.log('MainScreen - got user:', !!user);
-  // no phase morphing; we'll use seamless horizontal loop
-
-  const { width, height } = Dimensions.get('window');
-  const waveWidth = width * 2;
-  const makeCurvePath = (amp: number, y: number) => {
-    const x0 = -width * 0.25;
-    const x1 = width * 0.2;
-    const x2 = width * 0.6;
-    const x3 = width * 1.25; // go beyond screen for clean edges
-    return `M ${x0} ${y} C ${x1} ${y - amp}, ${x2} ${y + amp}, ${x3} ${y}`;
-  };
-  const path1 = useMemo(() => makeCurvePath(14, 120), [width]);
-  const path2 = useMemo(() => makeCurvePath(10, 170), [width]);
-  const path3 = useMemo(() => makeCurvePath(7, 220), [width]);
-
-  // Opacity animation for curves (appear/disappear)
-  const op1 = useRef(new Animated.Value(0.4)).current;
-  const op2 = useRef(new Animated.Value(0.4)).current;
-  const op3 = useRef(new Animated.Value(0.4)).current;
-  
-  // Floating elements animations
-  const float1Y = useRef(new Animated.Value(0)).current;
-  const float2Y = useRef(new Animated.Value(0)).current;
-  const float3Y = useRef(new Animated.Value(0)).current;
-  const float4Y = useRef(new Animated.Value(0)).current;
-  const rotate1 = useRef(new Animated.Value(0)).current;
-  const rotate2 = useRef(new Animated.Value(0)).current;
-  const scale1 = useRef(new Animated.Value(1)).current;
-  const scale2 = useRef(new Animated.Value(1)).current;
-  const buttonPulse = useRef(new Animated.Value(1)).current;
-  
-  useEffect(() => {
-    const fadeLoop = (val: Animated.Value, delay: number, min = 0.15, max = 0.85, dur = 5000) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(val, { toValue: max, duration: dur, delay, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(val, { toValue: min, duration: dur, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ])
-      ).start();
-    fadeLoop(op1, 0, 0.2, 0.9, 5500);
-    fadeLoop(op2, 1200, 0.15, 0.8, 6000);
-    fadeLoop(op3, 2400, 0.1, 0.75, 6500);
-    
-    // Floating animations
-    const floatAnim = (val: Animated.Value, distance: number, duration: number, delay: number) => 
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(val, { toValue: distance, duration, delay, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(val, { toValue: 0, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        ])
-      ).start();
-    
-    floatAnim(float1Y, -20, 3000, 0);
-    floatAnim(float2Y, -15, 4000, 500);
-    floatAnim(float3Y, -25, 3500, 1000);
-    floatAnim(float4Y, -18, 4500, 1500);
-    
-    // Rotation animations
-    Animated.loop(
-      Animated.timing(rotate1, { toValue: 1, duration: 8000, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-    
-    Animated.loop(
-      Animated.timing(rotate2, { toValue: 1, duration: 10000, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-    
-    // Scale pulse animations
-    const pulseAnim = (val: Animated.Value, min: number, max: number, duration: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(val, { toValue: max, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(val, { toValue: min, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        ])
-      ).start();
-    
-    pulseAnim(scale1, 0.8, 1.2, 2000);
-    pulseAnim(scale2, 0.9, 1.1, 3000);
-    
-    // Subtle button pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(buttonPulse, { toValue: 1.05, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(buttonPulse, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    ).start();
-    
-    return () => {
-      op1.stopAnimation();
-      op2.stopAnimation();
-      op3.stopAnimation();
-      float1Y.stopAnimation();
-      float2Y.stopAnimation();
-      float3Y.stopAnimation();
-      float4Y.stopAnimation();
-      rotate1.stopAnimation();
-      rotate2.stopAnimation();
-      scale1.stopAnimation();
-      scale2.stopAnimation();
-      buttonPulse.stopAnimation();
-    };
-  }, []);
-
-  // Soft pastel blue gradient (lighter sky blue)
-  const start = `#A9D5E8`;
-  const end = `#93C7DE`;
-  // Controls the vertical position of the standalone welcome text (background)
-  const welcomeTop = 200; // adjust this number to move the welcome text up/down
-
-  type Meal = { key: 'breakfast'|'lunch'|'dinner'; label: string; title: string; time: string; proteins: number; fats: number; carbs: number; kcal: number; icon: string };
-  const fallbackMeals: Meal[] = [
-    { key: 'breakfast', label: 'Breakfast', title: 'Oatmeal & Berries', time: '8:00 AM', proteins: 23.0, fats: 12.3, carbs: 83.1, kcal: 459, icon: '🥣' },
-    { key: 'lunch', label: 'Lunch', title: 'Chicken Salad', time: '12:30 PM', proteins: 26.5, fats: 10.2, carbs: 41.7, kcal: 420, icon: '🥗' },
-    { key: 'dinner', label: 'Dinner', title: 'Grilled Salmon', time: '7:00 PM', proteins: 28.4, fats: 14.8, carbs: 12.0, kcal: 390, icon: '🐟' },
-  ];
-  const [meals, setMeals] = useState<Meal[]>(fallbackMeals);
-  const [loadingMeals, setLoadingMeals] = useState(false);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    const run = async () => {
-      try {
-        const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) return;
-        setLoadingMeals(true);
-        const cancerType = (user as any)?.cancerType || (user as any)?.profile?.cancerType || 'unspecified';
-        const prompt = `You are a nutrition assistant. Generate meal suggestions tailored for a patient with ${cancerType}.
-Return strict JSON with keys breakfast, lunch, dinner. Each item has: label (Breakfast/Lunch/Dinner), title (short dish name), time (e.g. "8:00 AM"), proteins (number grams), fats (number grams), carbs (number grams), kcal (number), and emoji icon string.`;
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }),
-          });
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return;
-        const parsed = JSON.parse(jsonMatch[0]);
-        const next: Meal[] = ['breakfast','lunch','dinner'].map((k:any) => {
-          const it = parsed[k] || {};
-          return {
-            key: k,
-            label: it.label || (k.charAt(0).toUpperCase()+k.slice(1)),
-            title: it.title || '',
-            time: it.time || '',
-            proteins: Number(it.proteins)||0,
-            fats: Number(it.fats)||0,
-            carbs: Number(it.carbs)||0,
-            kcal: Number(it.kcal)||0,
-            icon: it.icon || (k==='breakfast'?'🥣':k==='lunch'?'🥗':'🍽️'),
-          } as Meal;
-        });
-        setMeals(next);
-      } finally {
-        setLoadingMeals(false);
-      }
-    };
-    run();
+    if (user) {
+      loadData();
+    }
   }, [user]);
 
-  return (
-    <LinearGradient colors={[start, end]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerWrap}>
-          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.headerRow} activeOpacity={0.85}>
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.headerAvatar} />
-            ) : (
-              <View style={styles.headerAvatarFallback}>
-                <Text style={styles.headerAvatarText}>{(user?.displayName || 'U').slice(0,1).toUpperCase()}</Text>
-              </View>
-            )}
-            <View>
-              <Text style={styles.hey}>Hey</Text>
-              <Text style={styles.name} numberOfLines={1}>{user?.displayName || 'Member'}</Text>
-              {/* Welcome text moved out of header */}
-            </View>
-          </TouchableOpacity>
+  // Refresh data when screen comes into focus (e.g., returning from Calendar)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadData();
+      }
+    }, [user])
+  );
 
-          <TouchableOpacity onPress={() => navigation.navigate('Profile', {})} style={styles.settingsBtn} activeOpacity={0.85}>
-            <Svg width={34} height={34} viewBox="0 0 34 34">
-              <Path d="M6 10 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-              <Path d="M6 17 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-              <Path d="M6 24 H28" stroke="#6B7280" strokeWidth="2.4" strokeLinecap="round"/>
-            </Svg>
-          </TouchableOpacity>
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [appts, profile] = await Promise.all([
+        getUserAppointments(),
+        loadProfile()
+      ]);
+      setAppointments(appts);
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  const getInitials = () => {
+    if (user?.displayName) return user.displayName.charAt(0).toUpperCase();
+    if (user?.email) return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const getUpcomingAppointments = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return appointments
+      .filter(apt => new Date(apt.date) >= today)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const upcomingAppointments = getUpcomingAppointments();
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.logoContainer}>
+            <LinearGradient
+              colors={[theme.colors.primary, '#0A66C2']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.logo}
+            >
+              <Ionicons name="heart" size={20} color="#FFFFFF" />
+            </LinearGradient>
+            <Text style={styles.appName}>VitalPath</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.headerIcon}>
+              <Ionicons name="notifications-outline" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Profile', {})}
+              style={styles.profileImageButton}
+            >
+              {userProfile?.photoURL ? (
+                <Image source={{ uri: userProfile.photoURL }} style={styles.profileImage} />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Text style={styles.profileImageText}>{getInitials()}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.headerBottom}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.userName}>{user?.displayName || 'User'}</Text>
+          </View>
         </View>
       </View>
-      {/* Spaced gentle curves with animated opacity */}
-      <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '100%', opacity: op1 }} pointerEvents="none">
-        <Svg width={waveWidth} height="100%">
-          <Path d={path1} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} fill="none" />
-        </Svg>
-      </Animated.View>
-      <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '100%', opacity: op2 }} pointerEvents="none">
-        <Svg width={waveWidth} height="100%">
-          <Path d={path2} stroke="rgba(255,255,255,0.28)" strokeWidth={1.3} fill="none" />
-        </Svg>
-      </Animated.View>
-      <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '100%', opacity: op3 }} pointerEvents="none">
-        <Svg width={waveWidth} height="100%">
-          <Path d={path3} stroke="rgba(255,255,255,0.22)" strokeWidth={1.2} fill="none" />
-        </Svg>
-      </Animated.View>
 
-      {/* Background welcome text removed per request */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading your dashboard...</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+            />
+          }
+        >
+        {/* Featured Card - Daily Tip */}
+        <View style={styles.featuredSection}>
+          <LinearGradient
+            colors={[theme.colors.primary, '#0A66C2']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.featuredCard}
+          >
+            <View style={styles.featuredIcon}>
+              <Ionicons name="bulb" size={24} color="#FFFFFF" />
+            </View>
+            <View style={styles.featuredContent}>
+              <Text style={styles.featuredTitle}>Daily Health Tip</Text>
+              <Text style={styles.featuredText}>
+                Stay hydrated! Drink at least 8 glasses of water daily to help your body function optimally.
+              </Text>
+            </View>
+          </LinearGradient>
+        </View>
 
-      {/* Floating animated elements */}
-      <Animated.View style={{ position: 'absolute', top: 120, left: '10%', opacity: 0.5, transform: [{ translateY: float1Y }, { scale: scale1 }] }} pointerEvents="none">
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.4)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 180, right: '15%', opacity: 0.6, transform: [{ translateY: float2Y }] }} pointerEvents="none">
-        <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(147,197,253,0.3)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 250, left: '75%', opacity: 0.4, transform: [{ translateY: float3Y }, { rotate: rotate1.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }} pointerEvents="none">
-        <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.35)', transform: [{ rotate: '45deg' }] }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 320, right: '70%', opacity: 0.5, transform: [{ translateY: float4Y }, { scale: scale2 }] }} pointerEvents="none">
-        <View style={{ width: 25, height: 25, borderRadius: 12.5, backgroundColor: 'rgba(252,231,243,0.6)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 450, left: '20%', opacity: 0.3, transform: [{ translateY: float1Y }] }} pointerEvents="none">
-        <Text style={{ fontSize: 36, opacity: 0.4 }}>💙</Text>
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 550, right: '18%', opacity: 0.35, transform: [{ translateY: float2Y }, { rotate: rotate2.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-360deg'] }) }] }} pointerEvents="none">
-        <Text style={{ fontSize: 28, opacity: 0.5 }}>✨</Text>
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 650, left: '80%', opacity: 0.4, transform: [{ translateY: float3Y }] }} pointerEvents="none">
-        <View style={{ width: 35, height: 35, borderRadius: 17.5, backgroundColor: 'rgba(254,226,226,0.5)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 750, left: '12%', opacity: 0.3, transform: [{ translateY: float4Y }] }} pointerEvents="none">
-        <Text style={{ fontSize: 32, opacity: 0.4 }}>🌟</Text>
-      </Animated.View>
-      
-      {/* Additional floating elements */}
-      <Animated.View style={{ position: 'absolute', top: 420, right: '25%', opacity: 0.25, transform: [{ translateY: float3Y }, { scale: scale1 }] }} pointerEvents="none">
-        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(191,219,254,0.5)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 580, left: '65%', opacity: 0.3, transform: [{ translateY: float1Y }] }} pointerEvents="none">
-        <View style={{ width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.3)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)' }} />
-      </Animated.View>
-      
-      <Animated.View style={{ position: 'absolute', top: 850, right: '60%', opacity: 0.35, transform: [{ translateY: float2Y }] }} pointerEvents="none">
-        <Text style={{ fontSize: 26, opacity: 0.4 }}>🌸</Text>
-      </Animated.View>
+        {/* Stats Cards */}
+        <View style={styles.statsSection}>
+          <View style={styles.statsGrid}>
+            <TouchableOpacity style={styles.statCard} activeOpacity={0.7}>
+              <View style={[styles.statIcon, { backgroundColor: '#E7F3FF' }]}>
+                <Ionicons name="calendar" size={24} color={theme.colors.primary} />
+              </View>
+              <Text style={styles.statNumber}>{upcomingAppointments.length}</Text>
+              <Text style={styles.statLabel}>Appointments</Text>
+            </TouchableOpacity>
 
-      {(() => {
-        const size = Math.max(width, height) * 5.0; // larger radius for flatter top arc
-        const inner = size * 0.99; // 4% smaller
-        const targetTop = 350; // move circle top further up
-        const bottom = -size + targetTop; // ensures top of circle stays at targetTop
-        return (
-          <>
-            <ScrollView
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-              contentContainerStyle={{ paddingTop: targetTop + 80, paddingBottom: 120, alignItems: 'center' }}
-              showsVerticalScrollIndicator={false}
+            <TouchableOpacity
+              style={styles.statCard}
+              onPress={() => navigation.navigate('Feed', {})}
+              activeOpacity={0.7}
             >
-              {/* Circular buttons above the circle */}
-              <View style={{ position: 'absolute', top: targetTop - 160, width: '100%', alignItems: 'center', zIndex: 3 }}>
-                <View style={{ width: Math.min(width * 0.92, 480), alignItems: 'center' }}>
-                  <View style={styles.actionRow}>
-                    <View style={styles.actionItem}>
-                      <TouchableOpacity activeOpacity={0.9} style={styles.actionBtn} onPress={() => navigation.navigate('Chat', {})}>
-                        <View style={[styles.iconCircle, { backgroundColor: '#FEE2E2' }]}>
-                          <Text style={styles.actionIconEmoji}>💬</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                    <Animated.View style={[styles.actionItem, { marginTop: -12, transform: [{ scale: buttonPulse }] }]}>
-                      <TouchableOpacity activeOpacity={0.9} style={styles.actionBtn} onPress={() => navigation.navigate('Wellness', {})}>
-                        <View style={[styles.iconCircle, { backgroundColor: '#FCE7F3' }]}>
-                          <Text style={styles.actionIconEmoji}>🧘</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </Animated.View>
-                    <View style={styles.actionItem}>
-                      <TouchableOpacity activeOpacity={0.9} style={styles.actionBtn} onPress={() => navigation.navigate('Feed', {})}>
-                        <View style={[styles.iconCircle, { backgroundColor: '#DBEAFE' }]}>
-                          <Text style={styles.actionIconEmoji}>👥</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
+              <View style={[styles.statIcon, { backgroundColor: '#E7F5E4' }]}>
+                <Ionicons name="people" size={24} color={theme.colors.accent} />
+              </View>
+              <Text style={styles.statNumber}>24</Text>
+              <Text style={styles.statLabel}>Community</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.statCard} activeOpacity={0.7}>
+              <View style={[styles.statIcon, { backgroundColor: '#FFF4E5' }]}>
+                <Ionicons name="ribbon" size={24} color={theme.colors.warning} />
+              </View>
+              <Text style={styles.statNumber}>7</Text>
+              <Text style={styles.statLabel}>Days Strong</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Access</Text>
+          <View style={styles.quickGrid}>
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('Chat', {})}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: theme.colors.primary }]}>
+                <Ionicons name="chatbubble-ellipses" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>AI Chat</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('FoodScan', {})}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: theme.colors.accent }]}>
+                <Ionicons name="camera" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>Scan Food</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('Feed', {})}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: theme.colors.primary }]}>
+                <Ionicons name="people" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>Community</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('Resources', {})}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: theme.colors.warning }]}>
+                <Ionicons name="book" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>Resources</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('Wellness', {})}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: '#9B59B6' }]}>
+                <Ionicons name="fitness" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>Wellness</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Upcoming Appointments */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Appointments</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Calendar')}>
+              <Text style={styles.seeAll}>
+                {upcomingAppointments.length > 0 ? 'View All' : 'Add'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {upcomingAppointments.length === 0 ? (
+            <TouchableOpacity
+              style={styles.emptyAppointments}
+              onPress={() => navigation.navigate('Calendar')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={48} color={theme.colors.subtext} />
+              <Text style={styles.emptyAppointmentsText}>No upcoming appointments</Text>
+              <Text style={styles.emptyAppointmentsSubtext}>
+                Tap to schedule your next checkup or treatment
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            upcomingAppointments.slice(0, 3).map((apt, index) => (
+              <View key={apt.id || index} style={styles.appointmentCard}>
+                <View style={styles.appointmentLeft}>
+                  <View style={styles.appointmentDate}>
+                    <Text style={styles.appointmentDay}>
+                      {new Date(apt.date).getDate()}
+                    </Text>
+                    <Text style={styles.appointmentMonth}>
+                      {new Date(apt.date).toLocaleDateString('en-US', { month: 'short' })}
+                    </Text>
                   </View>
-                  
-                  {/* Second row with Food Scanner */}
-                  <View style={[styles.actionRow, { marginTop: 20, justifyContent: 'center' }]}>
-                    <View style={styles.actionItem}>
-                      <TouchableOpacity activeOpacity={0.9} style={styles.actionBtn} onPress={() => navigation.navigate('FoodScan', {})}>
-                        <View style={[styles.iconCircle, { backgroundColor: '#FEF3C7' }]}>
-                          <Text style={styles.actionIconEmoji}>🍽️</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <Text style={[styles.actionLabel, { marginTop: 8 }]}>Food Scanner</Text>
+                  <View style={styles.appointmentDetails}>
+                    <Text style={styles.appointmentTitle}>{apt.title}</Text>
+                    <View style={styles.appointmentMeta}>
+                      <Ionicons name="time-outline" size={14} color={theme.colors.subtext} />
+                      <Text style={styles.appointmentTime}>{apt.time}</Text>
                     </View>
                   </View>
                 </View>
+                <Ionicons
+                  name={
+                    apt.type === 'medical'
+                      ? 'medical'
+                      : apt.type === 'lab'
+                      ? 'flask'
+                      : 'calendar'
+                  }
+                  size={24}
+                  color={theme.colors.primary}
+                />
               </View>
+            ))
+          )}
+        </View>
 
-              {/* Circles moved inside ScrollView so they scroll */}
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: targetTop,
-                  width: size,
-                  height: size,
-                  marginLeft: -size / 2,
-                  borderRadius: size / 2,
-                  backgroundColor: '#FFFFFF',
-                }}
-              />
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: targetTop+ (size - inner) / 2,
-                  width: inner,
-                  height: inner,
-                  marginLeft: -inner / 2,
-                }}
-              >
-                <Svg width={inner} height={inner}>
-                  <Circle
-                    cx={inner / 2}
-                    cy={inner / 2}
-                    r={(inner / 2) - 1}
-                    stroke="rgba(147,197,253,0.8)"
-                    strokeWidth={4}
-                    strokeDasharray="8 12"
-                    strokeLinecap="round"
-                    fill="none"
-                  />
-                </Svg>
+        {/* Health Journey */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Your Health Journey</Text>
+          <View style={styles.journeyCard}>
+            <View style={styles.journeyHeader}>
+              <View>
+                <Text style={styles.journeyTitle}>Track Your Progress</Text>
+                <Text style={styles.journeySubtitle}>Stay motivated on your journey</Text>
               </View>
-              <View style={{ position: 'absolute', top: targetTop - 40, width: '100%', alignItems: 'center', zIndex: 2 }}>
-                <View style={{ width: Math.min(width * 0.92, 520), flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 }}>
-                  <TouchableOpacity activeOpacity={0.85} style={[styles.edgeBtn, { marginTop: 14, backgroundColor: '#93C5FD' }]}>
-                    <Text style={styles.edgeBtnEmoji}>📊</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.85} style={[styles.edgeBtnLarge, { backgroundColor: '#F9A8D4' }]}>
-                    <Text style={styles.edgeBtnEmojiLarge}>🎯</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.85} style={[styles.edgeBtn, { marginTop: 14, backgroundColor: '#FCA5A5' }]}>
-                    <Text style={styles.edgeBtnEmoji}>💪</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.journeyBadge}>
+                <Ionicons name="trophy" size={32} color={theme.colors.warning} />
               </View>
-              <View style={{ width: Math.min(width * 0.92, 480) }}>
-                <Text style={styles.mealsHeading}>Your meals</Text>
-                {meals.map((m, idx) => (
-                  <TouchableOpacity key={m.key} activeOpacity={0.85} style={[styles.mealCard, idx !== 0 && { marginTop: 16 }]}> 
-                  {/* Header: icon + title/subtitle, actions on right */}
-                  <View style={styles.cardHeader}>
-                    <View style={styles.mealLeft}>
-                      <View style={styles.mealIcon}><Text style={{ fontSize: 22 }}>{m.icon}</Text></View>
-                      <View style={styles.mealTextCol}>
-                        <Text style={styles.mealHeaderTitle}>{m.label}</Text>
-                        <Text style={styles.mealHeaderSub}>{m.title}</Text>
-                        {/* Macros nested under the name */}
-                        <View style={styles.macroRow}>
-                          <View style={styles.macroItem}>
-                            <Text style={styles.macroLabel}>Fats</Text>
-                            <Text style={styles.macroValue}>{m.fats.toFixed(1)}</Text>
-                          </View>
-                          <View style={styles.macroDivider} />
-                          <View style={styles.macroItem}>
-                            <Text style={styles.macroLabel}>Carbs</Text>
-                            <Text style={styles.macroValue}>{m.carbs.toFixed(1)}</Text>
-                          </View>
-                          <View style={styles.macroDivider} />
-                          <View style={styles.macroItem}>
-                            <Text style={styles.macroLabel}>Kcal</Text>
-                            <Text style={styles.macroValue}>{m.kcal.toFixed(1)}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    </View>
-                    <View style={styles.actionsRow}>
-                      <Text style={styles.actionIcon}>✏️</Text>
-                      <Text style={styles.actionIcon}>☆</Text>
-                    </View>
-                  </View>
+            </View>
+            <View style={styles.journeyProgress}>
+              <View style={styles.progressItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.colors.accent} />
+                <Text style={styles.progressText}>Profile Complete</Text>
+              </View>
+              <View style={styles.progressItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.colors.accent} />
+                <Text style={styles.progressText}>First Chat Session</Text>
+              </View>
+              <View style={styles.progressItem}>
+                <Ionicons
+                  name="ellipse-outline"
+                  size={20}
+                  color={theme.colors.subtext}
+                />
+                <Text style={styles.progressText}>Join Community</Text>
+              </View>
+            </View>
+          </View>
+        </View>
 
-                  {/* Footer: time pill + show more */}
-                  <View style={styles.cardFooter}>
-                    <View style={styles.timePill}><Text style={styles.timePillText}>{m.time}</Text></View>
-                    <Text style={styles.showMore}>Show more ›</Text>
-                  </View>
-                  </TouchableOpacity>
-                ))}
-                <View style={{ height: 24 }} />
-              </View>
-            </ScrollView>
-          </>
-        );
-      })()}
-    </LinearGradient>
+        {/* Support Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Support & Resources</Text>
+          <View style={styles.supportGrid}>
+            <TouchableOpacity style={styles.supportCard} activeOpacity={0.7}>
+              <Ionicons name="call" size={24} color={theme.colors.primary} />
+              <Text style={styles.supportText}>Helpline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.supportCard} activeOpacity={0.7}>
+              <Ionicons name="medical" size={24} color={theme.colors.danger} />
+              <Text style={styles.supportText}>Emergency</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.supportCard} activeOpacity={0.7}>
+              <Ionicons name="help-circle" size={24} color={theme.colors.accent} />
+              <Text style={styles.supportText}>FAQs</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        </ScrollView>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { position: 'absolute', top: 16, left: 16, right: 16, zIndex: 20, elevation: 20, backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 28, paddingVertical: 14, paddingHorizontal: 18, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerWrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF' },
-  headerAvatarFallback: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  headerAvatarText: { color: '#1F2937', fontWeight: '700', fontSize: 18 },
-  hey: { color: '#6B7280', fontSize: 13, fontWeight: '500' },
-  name: { color: '#1F2937', fontWeight: '700', fontSize: 18 },
-  welcomeHero: { color: theme.colors.text, fontWeight: '900', fontSize: 28, letterSpacing: 0.2, marginTop: 2 },
-  welcomeSub: { color: 'rgba(0,0,0,0.65)', fontWeight: '600', fontSize: 14, marginTop: 2 },
-  welcomeStandalone: {
-    color: '#0f172a',
-    fontWeight: '900',
-    fontSize: 36,
-    letterSpacing: 0.3,
-    textShadowColor: 'rgba(0,0,0,0.08)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
   },
-  // Welcome + actions
-  welcomeTitle: { color: theme.colors.text, fontWeight: '700', fontSize: 16, marginBottom: 8 },
-  chooseTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  chooseTitleText: { color: theme.colors.text, fontWeight: '800', fontSize: 18 },
-  choosePill: { backgroundColor: '#FADBE5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  choosePillText: { color: '#111', fontWeight: '800', fontSize: 18 },
-  actionRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 2 },
-  actionItem: { flex: 1, alignItems: 'center' },
-  actionBtn: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    marginBottom: 12,
   },
-  actionIconEmoji: { fontSize: 32 },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  logoContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
   },
-  edgeBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'center',
+    ...theme.shadows.sm,
   },
-  edgeBtnLarge: {
-    width: 85,
-    height: 85,
-    borderRadius: 42.5,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+  appName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: 0.5,
+  },
+  headerBottom: {
+    paddingBottom: 4,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 14,
+    color: theme.colors.subtext,
+    fontWeight: '400',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  profileImageButton: {
+    width: 40,
+    height: 40,
+  },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+  },
+  profileImagePlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.primary,
     justifyContent: 'center',
-  },
-  edgeBtnEmoji: { fontSize: 28 },
-  edgeBtnEmojiLarge: { fontSize: 34 },
-  actionLabel: { color: theme.colors.text, fontWeight: '700', marginTop: 6, fontSize: 12 },
-  settingsBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-  settingsIcon: { fontSize: 20 },
-  // Meals styles
-  mealsHeading: { color: '#1F2937', fontWeight: '700', marginBottom: 14, fontSize: 20 },
-  mealCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 22,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    minHeight: 96,
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  mealLeft: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 16 },
-  mealIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#F3F4F6',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  mealTitle: { color: theme.colors.text, fontWeight: '800' },
-  mealMetaRow: { flexDirection: 'row', columnGap: 12, marginTop: 4 },
-  mealMeta: { color: 'rgba(0,0,0,0.55)', fontSize: 12 },
-  mealRight: { alignItems: 'flex-end', rowGap: 2 },
-  mealTime: { color: 'rgba(0,0,0,0.5)', fontSize: 13 },
-  mealKcal: { color: theme.colors.text, fontWeight: '800', fontSize: 16 },
-  chev: { color: 'rgba(0,0,0,0.35)', fontSize: 20, marginTop: 2 },
-  // Reference-style card structure
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  mealHeaderTitle: { color: '#1F2937', fontWeight: '700', fontSize: 18 },
-  mealHeaderSub: { color: '#6B7280', fontSize: 13, marginTop: 2, fontWeight: '500' },
-  actionsRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12 },
-  actionIcon: { color: '#9CA3AF', fontSize: 18 },
-  metricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
-  metricCol: { alignItems: 'center', flex: 1 },
-  metricLabel: { color: 'rgba(0,0,0,0.6)', fontSize: 12 },
-  metricValue: { color: theme.colors.text, fontWeight: '800', fontSize: 18, marginTop: 2 },
-  // New macros under title
-  mealTextCol: { flexDirection: 'column' },
-  macroRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12, marginTop: 12 },
-  macroItem: { alignItems: 'flex-start' },
-  macroLabel: { color: '#9CA3AF', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  macroValue: { color: '#1F2937', fontWeight: '700', fontSize: 18, marginTop: 1 },
-  macroDivider: { width: 1, height: 20, backgroundColor: '#E5E7EB', marginHorizontal: 10 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
-  timePill: { backgroundColor: '#DBEAFE', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
-  timePillText: { color: '#1E40AF', fontWeight: '700', fontSize: 11 },
-  showMore: { color: '#6B7280', fontSize: 12, fontWeight: '600' },
-  // No extra styles needed for SVG waves beyond container
+  profileImageText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 32,
+  },
+  featuredSection: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+  featuredCard: {
+    borderRadius: 16,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...theme.shadows.md,
+  },
+  featuredIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  featuredContent: {
+    flex: 1,
+  },
+  featuredTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  featuredText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    lineHeight: 20,
+    opacity: 0.95,
+  },
+  statsSection: {
+    paddingHorizontal: 16,
+    marginTop: 20,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    ...theme.shadows.sm,
+  },
+  statIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: theme.colors.subtext,
+    textAlign: 'center',
+  },
+  section: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 16,
+  },
+  seeAll: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  quickAction: {
+    width: (width - 56) / 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    ...theme.shadows.sm,
+  },
+  quickIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  appointmentCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    ...theme.shadows.sm,
+  },
+  appointmentLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  appointmentDate: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  appointmentDay: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  appointmentMonth: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    textTransform: 'uppercase',
+  },
+  appointmentDetails: {
+    flex: 1,
+  },
+  appointmentTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  appointmentMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  appointmentTime: {
+    fontSize: 14,
+    color: theme.colors.subtext,
+  },
+  journeyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    ...theme.shadows.sm,
+  },
+  journeyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  journeyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  journeySubtitle: {
+    fontSize: 14,
+    color: theme.colors.subtext,
+  },
+  journeyBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFF4E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  journeyProgress: {
+    gap: 12,
+  },
+  progressItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressText: {
+    fontSize: 15,
+    color: theme.colors.text,
+  },
+  supportGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  supportCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+    ...theme.shadows.sm,
+  },
+  supportText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  // Loading state
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: theme.colors.subtext,
+    fontWeight: '500',
+  },
+  // Empty appointments
+  emptyAppointments: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    ...theme.shadows.sm,
+  },
+  emptyAppointmentsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyAppointmentsSubtext: {
+    fontSize: 14,
+    color: theme.colors.subtext,
+    textAlign: 'center',
+  },
 });
 
 export default MainScreen;

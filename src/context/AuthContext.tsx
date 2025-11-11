@@ -43,12 +43,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let profileUnsub: (() => void) | undefined;
     const unsub = onAuthStateChanged(auth, async (u) => {
       try {
+        console.log('[AuthContext] Auth state changed, user:', u?.email);
         setUser(u);
       if (u) {
         // live listen to user profile so onboardingNeeded updates immediately after save
         try {
           const userDoc = doc(db!, 'users', u.uid);
           const isNewUser = u.metadata && u.metadata.creationTime === u.metadata.lastSignInTime;
+          console.log('[AuthContext] User metadata:', {
+            creationTime: u.metadata?.creationTime,
+            lastSignInTime: u.metadata?.lastSignInTime,
+            isNewUser
+          });
           
           profileUnsub = onSnapshot(
             userDoc,
@@ -56,45 +62,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const profileExists = snap.exists();
               const data = profileExists ? (snap.data() as any) : {};
               
-              // Check if onboarding is complete
-              const explicitComplete = data?.onboardingComplete === true;
-              const hasBasicInfo = !!(data?.displayName) && typeof data?.age === 'number';
+              console.log('[AuthContext] Profile snapshot:', {
+                profileExists,
+                onboardingComplete: data?.onboardingComplete,
+                displayName: data?.displayName,
+                age: data?.age,
+                isNewUser
+              });
               
-              // New users without profile need onboarding
-              if (!profileExists && isNewUser) {
-                console.log('New user detected - needs onboarding');
+              // Simple check: onboarding is complete ONLY if explicitly set to true
+              const isComplete = data?.onboardingComplete === true;
+              
+              if (!profileExists) {
+                // No profile document yet - new user needs onboarding
+                console.log('[AuthContext] No profile - needs onboarding');
                 setOnboardingNeeded(true);
+                setInitializing(false);
                 return;
               }
               
-              // Existing users who haven't completed onboarding
-              if (!explicitComplete && !hasBasicInfo) {
-                console.log('User needs onboarding - incomplete profile');
-                setOnboardingNeeded(true);
+              if (isComplete) {
+                // Onboarding explicitly completed
+                console.log('[AuthContext] Onboarding complete!');
+                setOnboardingNeeded(false);
+                setInitializing(false);
                 return;
               }
               
-              // Onboarding is complete
-              console.log('Onboarding complete');
-              setOnboardingNeeded(false);
+              // Profile exists but onboarding not complete
+              console.log('[AuthContext] Profile exists but onboarding not complete - needs onboarding');
+              setOnboardingNeeded(true);
+              setInitializing(false);
             },
             (error) => {
-              console.error('Profile snapshot error:', error);
+              console.error('[AuthContext] Profile snapshot error:', error);
               // On error, assume new user needs onboarding
               setOnboardingNeeded(true);
+              setInitializing(false);
             }
           );
         } catch (error) {
-          console.error('Profile setup error:', error);
+          console.error('[AuthContext] Profile setup error:', error);
           setOnboardingNeeded(true);
+          setInitializing(false);
         }
       } else {
+        // User logged out
+        console.log('[AuthContext] User logged out');
         setOnboardingNeeded(false);
+        setInitializing(false);
         if (profileUnsub) { try { profileUnsub(); } catch {} profileUnsub = undefined; }
       }
-      setInitializing(false);
       } catch (error) {
-        console.error('Auth error:', error);
+        console.error('[AuthContext] Auth error:', error);
         setInitializing(false);
       }
     });
@@ -111,14 +131,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const u = cred.user;
+      console.log('[Auth] User created, uid:', u.uid);
+      
+      // Immediately set onboarding needed for new users
+      setOnboardingNeeded(true);
+      console.log('[Auth] Set onboardingNeeded to true for new user');
+      
       try {
         // Seed a minimal profile doc so onboarding gating has a stable snapshot
         const userDoc = doc(db!, 'users', u.uid);
-        await (await import('firebase/firestore')).setDoc(
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(
           userDoc,
-          { onboardingComplete: false },
+          { 
+            onboardingComplete: false,
+            createdAt: new Date().toISOString(),
+          },
           { merge: true }
         );
+        console.log('[Auth] User doc seeded successfully with onboardingComplete: false');
       } catch (e) {
         console.warn('[Auth] Failed to seed user doc', e);
       }

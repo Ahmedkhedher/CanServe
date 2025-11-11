@@ -1,24 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Linking, TextInput, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Image,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  StatusBar,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { FooterBar, ButtonSecondary, ButtonPrimary, Card } from '../ui/components';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../ui/theme';
 import { loadProfile, saveProfile, uploadAvatarAsync } from '../services/profile';
 
-const AVATARS = [
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1527980965255-d3b416303d12?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1527980969970-0c9da7b3b6c1?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1556157382-97eda2d62296?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1552374196-c4e7ffc6e126?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1527980965255-d3b416303d12?q=80&w=800&auto=format&fit=crop',
-];
-
-const ProfileScreen: React.FC<any> = ({ navigation }) => {
-  const { signOut } = useAuth();
+const ProfileScreenNew: React.FC<any> = ({ navigation }) => {
+  const { signOut, user } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -27,24 +27,31 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
   const [age, setAge] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const p = await loadProfile();
-      if (p) {
-        setDisplayName(p.displayName || 'Member');
-        setPhotoURL(p.photoURL);
-        if (p.cancerType) setCancerType(p.cancerType);
-        if (p.stage) setStage(p.stage);
-        if (typeof p.age === 'number') setAge(String(p.age));
-      }
-    })();
+    loadUserProfile();
   }, []);
+
+  const loadUserProfile = async () => {
+    const p = await loadProfile();
+    if (p) {
+      setDisplayName(p.displayName || 'Member');
+      setPhotoURL(p.photoURL);
+      if (p.cancerType) setCancerType(p.cancerType);
+      if (p.stage) setStage(p.stage);
+      if (typeof p.age === 'number') setAge(String(p.age));
+    }
+  };
 
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (perm.status !== 'granted') {
-      return Alert.alert('Permission required', 'Please allow photo library access to upload an avatar.');
+      return Alert.alert('Permission required', 'Please allow photo library access.');
     }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
     if (!res.canceled && res.assets?.[0]?.uri) {
       try {
         setSaving(true);
@@ -62,8 +69,8 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
     try {
       setSaving(true);
       const ageNum = parseInt(age, 10);
-      await saveProfile({ 
-        displayName: displayName.trim() || 'Member', 
+      await saveProfile({
+        displayName: displayName.trim() || 'Member',
         photoURL,
         cancerType: cancerType.trim() || undefined,
         stage: stage.trim() || undefined,
@@ -77,105 +84,345 @@ const ProfileScreen: React.FC<any> = ({ navigation }) => {
     }
   };
 
+  const getInitials = () => {
+    if (displayName) return displayName.charAt(0).toUpperCase();
+    if (user?.email) return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: theme.spacing(16) }}>
-      <Text style={styles.title}>Your Profile</Text>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <Card style={{ alignItems: 'center' }}>
-        <TouchableOpacity onPress={pickImage} activeOpacity={0.9}>
-          <Image source={{ uri: photoURL || AVATARS[0] }} style={styles.avatar} />
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
-        <Text style={{ color: theme.colors.subtext, marginTop: 6 }}>Tap image to upload</Text>
-        <View style={{ height: theme.spacing(1) }} />
-        <TextInput
-          placeholder="Display name"
-          placeholderTextColor={theme.colors.subtext}
-          value={displayName}
-          onChangeText={setDisplayName}
-          style={styles.input}
-        />
-        <View style={{ height: theme.spacing(1) }} />
-        <TextInput
-          placeholder="Cancer type"
-          placeholderTextColor={theme.colors.subtext}
-          value={cancerType}
-          onChangeText={setCancerType}
-          style={styles.input}
-        />
-        <View style={{ height: theme.spacing(1) }} />
-        <TextInput
-          placeholder="Stage"
-          placeholderTextColor={theme.colors.subtext}
-          value={stage}
-          onChangeText={setStage}
-          style={styles.input}
-        />
-        <View style={{ height: theme.spacing(1) }} />
-        <TextInput
-          placeholder="Age"
-          placeholderTextColor={theme.colors.subtext}
-          value={age}
-          onChangeText={setAge}
-          keyboardType="number-pad"
-          style={styles.input}
-        />
-        <View style={{ height: theme.spacing(1) }} />
-        <ButtonPrimary title={saving ? 'Saving…' : 'Save profile'} onPress={onSave} disabled={saving} />
-      </Card>
+        <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity onPress={onSave} disabled={saving}>
+          <Text style={[styles.saveText, saving && styles.saveTextDisabled]}>
+            {saving ? 'Saving...' : 'Save'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      <Text style={styles.section}>Choose an avatar</Text>
-      <View style={styles.avatarGrid}>
-        {AVATARS.map((u, i) => (
-          <TouchableOpacity key={i} onPress={() => setPhotoURL(u)}>
-            <Image source={{ uri: u }} style={[styles.avatarSmall, photoURL === u ? styles.avatarSmallActive : undefined]} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Profile Picture Section */}
+        <View style={styles.profileSection}>
+          <TouchableOpacity
+            onPress={pickImage}
+            style={styles.avatarContainer}
+            activeOpacity={0.7}
+          >
+            {photoURL ? (
+              <Image source={{ uri: photoURL }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>{getInitials()}</Text>
+              </View>
+            )}
+            <View style={styles.cameraButton}>
+              <Ionicons name="camera" size={20} color="#FFFFFF" />
+            </View>
           </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={{ height: theme.spacing(2) }} />
-      <ButtonSecondary title="View profile details" onPress={() => navigation.navigate('OnboardingSummary')} />
-
-      <Text style={styles.section}>Resources</Text>
-      <View style={styles.card}>
-        <Text style={styles.link} onPress={() => Linking.openURL('https://www.who.int/health-topics/cancer')}>WHO: Cancer</Text>
-        <Text style={styles.link} onPress={() => Linking.openURL('https://www.cancerresearchuk.org/')}>Cancer Research UK</Text>
-        <Text style={styles.link} onPress={() => Linking.openURL('https://www.nccn.org/patients')}>NCCN Guidelines for Patients</Text>
-      </View>
-
-      {saving && (
-        <View style={{ paddingVertical: 8 }}>
-          <ActivityIndicator />
+          <Text style={styles.changePhotoText}>Change Profile Picture</Text>
         </View>
-      )}
 
-      <View style={{ height: theme.spacing(12) }} />
-      <ButtonSecondary title="Sign out" onPress={signOut} />
-      <View style={{ height: theme.spacing(1) }} />
+        {/* Profile Info Card */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Personal Information</Text>
+          <View style={styles.card}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Display Name</Text>
+              <TextInput
+                placeholder="Enter your name"
+                placeholderTextColor={theme.colors.subtext}
+                value={displayName}
+                onChangeText={setDisplayName}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.disabledInput}>
+                <Text style={styles.disabledText}>{user?.email || 'Not available'}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Health Info Card */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Information</Text>
+          <View style={styles.card}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Cancer Type</Text>
+              <TextInput
+                placeholder="e.g., Breast, Lung, etc."
+                placeholderTextColor={theme.colors.subtext}
+                value={cancerType}
+                onChangeText={setCancerType}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Stage</Text>
+              <TextInput
+                placeholder="e.g., Stage I, II, III, IV"
+                placeholderTextColor={theme.colors.subtext}
+                value={stage}
+                onChangeText={setStage}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Age</Text>
+              <TextInput
+                placeholder="Your age"
+                placeholderTextColor={theme.colors.subtext}
+                value={age}
+                onChangeText={setAge}
+                keyboardType="number-pad"
+                style={styles.input}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => navigation.navigate('OnboardingSummary')}
+            >
+              <View style={styles.actionLeft}>
+                <Ionicons name="document-text" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionText}>View Summary</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.actionRow}>
+              <View style={styles.actionLeft}>
+                <Ionicons name="settings" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionText}>Settings</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.actionRow}>
+              <View style={styles.actionLeft}>
+                <Ionicons name="help-circle" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionText}>Help & Support</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Sign Out Button */}
+        <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+          <Ionicons name="log-out" size={20} color={theme.colors.danger} />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
-      <FooterBar
-        active="profile"
-        onHome={() => navigation.navigate('Main')}
-        onQA={() => navigation.navigate('Feed')}
-        onChat={() => navigation.navigate('Chat')}
-        onProfile={() => {}}
-        onPlus={() => navigation.navigate('Compose', { mode: 'question' })}
-      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: theme.spacing(2), backgroundColor: theme.colors.bg, paddingBottom: theme.spacing(2) },
-  title: { fontSize: 20, fontWeight: '700', marginBottom: theme.spacing(1), color: theme.colors.text },
-  section: { marginTop: theme.spacing(2), marginBottom: theme.spacing(1), fontWeight: '700', color: theme.colors.text },
-  card: { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing(2) },
-  link: { color: theme.colors.primary, marginBottom: 8 },
-  input: { width: '100%', borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, padding: 10, color: theme.colors.text, backgroundColor: theme.colors.card },
-  avatar: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, borderColor: theme.colors.border },
-  avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  avatarSmall: { width: 56, height: 56, borderRadius: 28, marginRight: 8, marginBottom: 8, borderWidth: 2, borderColor: 'transparent' },
-  avatarSmallActive: { borderColor: theme.colors.primary },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  saveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  saveTextDisabled: {
+    opacity: 0.5,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  profileSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 8,
+    borderBottomColor: theme.colors.bg,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
+    borderColor: theme.colors.primary,
+  },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: theme.colors.primaryLight,
+  },
+  avatarText: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    ...theme.shadows.md,
+  },
+  changePhotoText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.primary,
+  },
+  section: {
+    marginTop: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.text,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+  },
+  inputGroup: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: 8,
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: theme.colors.text,
+    backgroundColor: theme.colors.bg,
+  },
+  disabledInput: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    backgroundColor: theme.colors.bg,
+  },
+  disabledText: {
+    fontSize: 16,
+    color: theme.colors.subtext,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  actionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: theme.colors.text,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginHorizontal: 16,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 24,
+    paddingVertical: 16,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+    gap: 8,
+  },
+  signOutText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.danger,
+  },
 });
 
-export default ProfileScreen;
+export default ProfileScreenNew;

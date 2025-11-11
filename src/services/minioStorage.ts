@@ -1,4 +1,5 @@
 import { minioConfig, getMinioUrl } from '../config/minio';
+import * as Crypto from 'expo-crypto';
 
 /**
  * MinIO Storage Service
@@ -55,25 +56,50 @@ export async function initializeMinIOBucket(): Promise<void> {
 export async function uploadViaProxy(uri: string, folder: string, filename: string): Promise<string> {
   try {
     console.log('uploadViaProxy called with:', { uri, folder, filename });
-    
-    // Fetch the file as blob
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    console.log('Blob fetched:', { type: blob.type, size: blob.size });
+    console.log('MinIO config proxyUrl:', minioConfig.proxyUrl);
     
     // Create FormData
     const formData = new FormData();
-    formData.append('file', blob, filename);
+    
+    // Handle different URI formats (web vs mobile)
+    if (uri.startsWith('file://') || uri.startsWith('content://')) {
+      // Mobile: file:// or content:// URIs - React Native FormData can handle these directly
+      console.log('Using mobile file URI directly in FormData');
+      // On React Native, FormData can append file URIs directly
+      formData.append('file', {
+        uri: uri,
+        type: 'image/jpeg',
+        name: filename,
+      } as any);
+    } else if (uri.startsWith('blob:') || uri.startsWith('http')) {
+      // Web: Fetch blob first
+      console.log('Fetching blob from URI for web...');
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      console.log('Blob created:', { type: blob.type, size: blob.size });
+      formData.append('file', blob, filename);
+    } else if (uri.startsWith('data:')) {
+      // Data URI: convert to blob
+      console.log('Converting data URI to blob...');
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      console.log('Blob created:', { type: blob.type, size: blob.size });
+      formData.append('file', blob, filename);
+    } else {
+      throw new Error(`Unsupported URI format: ${uri.substring(0, 20)}...`);
+    }
+    
     formData.append('folder', folder);
     formData.append('filename', filename);
     
     // Use proxy server from config (detects web vs mobile)
     const proxyUrl = `${minioConfig.proxyUrl}/upload`;
-    console.log('Uploading via proxy:', proxyUrl);
+    console.log('Uploading to proxy:', proxyUrl);
     
     const uploadResponse = await fetch(proxyUrl, {
       method: 'POST',
       body: formData,
+      // Don't set Content-Type header, let browser/RN set it with boundary
     });
 
     console.log('Proxy response status:', uploadResponse.status);
@@ -90,6 +116,7 @@ export async function uploadViaProxy(uri: string, folder: string, filename: stri
     
   } catch (error: any) {
     console.error('Error uploading via proxy:', error);
+    console.error('Error details:', { message: error?.message, stack: error?.stack });
     throw new Error(`Proxy upload failed: ${error?.message || 'Unknown error'}`);
   }
 }
@@ -266,7 +293,8 @@ export async function uploadImage(
   folder: string,
   filename: string
 ): Promise<string> {
-  return uploadViaProxy(uri, folder, filename);
+  // Always use proxy for uploads (Expo Go doesn't support crypto.subtle for direct uploads)
+  return await uploadViaProxy(uri, folder, filename);
 }
 
 // ===== AWS SigV4 helpers (S3 compatible) =====
@@ -367,21 +395,33 @@ function canonicalQueryString(sp: URLSearchParams): string {
 }
 
 async function sha256Hex(text: string): Promise<string> {
-  const enc = new TextEncoder();
-  const data = enc.encode(text);
-  const cryptoObj: any = (globalThis as any).crypto || (globalThis as any).webkitCrypto;
-  if (!cryptoObj?.subtle) {
-    throw new Error('Web Crypto not available to compute SHA-256 for SigV4. Run on web or add a crypto polyfill.');
+  try {
+    // Try expo-crypto first (React Native)
+    const hash = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      text
+    );
+    return hash;
+  } catch (e) {
+    // Fallback to Web Crypto API (web)
+    const enc = new TextEncoder();
+    const data = enc.encode(text);
+    const cryptoObj: any = (globalThis as any).crypto || (globalThis as any).webkitCrypto;
+    if (!cryptoObj?.subtle) {
+      throw new Error('Crypto not available to compute SHA-256 for SigV4.');
+    }
+    const hash = await cryptoObj.subtle.digest('SHA-256', data);
+    return bufferToHex(hash);
   }
-  const hash = await cryptoObj.subtle.digest('SHA-256', data);
-  return bufferToHex(hash);
 }
 
 async function hmac(key: string | ArrayBuffer, data: string): Promise<ArrayBuffer> {
+  // For React Native, we need to use a different approach since expo-crypto doesn't support HMAC directly
+  // Fall back to Web Crypto API which should work with the polyfill
   const enc = new TextEncoder();
   const cryptoObj: any = (globalThis as any).crypto || (globalThis as any).webkitCrypto;
   if (!cryptoObj?.subtle) {
-    throw new Error('Web Crypto not available to compute HMAC for SigV4. Run on web or add a crypto polyfill.');
+    throw new Error('Crypto not available to compute HMAC for SigV4. HMAC signing requires Web Crypto API.');
   }
   const cryptoKey = await cryptoObj.subtle.importKey(
     'raw',

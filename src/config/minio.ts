@@ -2,7 +2,7 @@
 const isWeb = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 // Use localhost for web, LAN IP for mobile devices
-const NETWORK_IP = '172.16.30.8';
+const NETWORK_IP = '192.168.1.9';
 const MINIO_PORT = '9000';
 const PROXY_PORT = '3001';
 

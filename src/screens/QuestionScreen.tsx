@@ -144,7 +144,11 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.title}>{q.title}</Text>
           
           {/* Author Info with Enhanced Design */}
-          <View style={styles.authorSection}>
+          <TouchableOpacity 
+            style={styles.authorSection}
+            onPress={() => q.author.id !== 'anon' && navigation.navigate('UserProfile', { userId: q.author.id })}
+            activeOpacity={0.7}
+          >
             <View style={styles.authorBadge}>
               <Text style={styles.authorBadgeText}>{q.author.name[0].toUpperCase()}</Text>
             </View>
@@ -152,7 +156,7 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={styles.authorName}>{q.author.name}</Text>
               <MetaText>Asked • Just now</MetaText>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.divider} />
           
@@ -261,19 +265,26 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
           answers.map((item, index) => (
             <Card key={item.id} elevated style={styles.answerCard}>
               <View style={styles.answerHeader}>
-                {item.author?.photoURL ? (
-                  <Image source={{ uri: item.author.photoURL }} style={styles.authorAvatar} />
-                ) : (
-                  <LinearGradient
-                    colors={['#A9D5E8', '#5B9AB8']}
-                    style={styles.authorAvatar}
-                  >
-                    <Text style={styles.authorAvatarText}>{item.author.name[0].toUpperCase()}</Text>
-                  </LinearGradient>
-                )}
+                <TouchableOpacity 
+                  onPress={() => item.author.id !== 'anon' && navigation.navigate('UserProfile', { userId: item.author.id })}
+                  activeOpacity={0.7}
+                >
+                  {item.author?.photoURL ? (
+                    <Image source={{ uri: item.author.photoURL }} style={styles.authorAvatar} />
+                  ) : (
+                    <LinearGradient
+                      colors={['#A9D5E8', '#5B9AB8']}
+                      style={styles.authorAvatar}
+                    >
+                      <Text style={styles.authorAvatarText}>{item.author.name[0].toUpperCase()}</Text>
+                    </LinearGradient>
+                  )}
+                </TouchableOpacity>
                 <View style={{ flex: 1 }}>
                   <View style={styles.answerAuthorRow}>
-                    <Text style={styles.answerAuthor}>{item.author.name}</Text>
+                    <TouchableOpacity onPress={() => item.author.id !== 'anon' && navigation.navigate('UserProfile', { userId: item.author.id })}>
+                      <Text style={styles.answerAuthor}>{item.author.name}</Text>
+                    </TouchableOpacity>
                     {index === 0 && answers.length > 1 && (
                       <View style={styles.topAnswerBadge}>
                         <Ionicons name="trophy" size={scaleFontSize(12)} color={theme.colors.warning} />

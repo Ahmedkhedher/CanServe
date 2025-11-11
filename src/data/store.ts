@@ -71,9 +71,10 @@ export const addQuestion = async (title: string): Promise<Question> => {
       const prof = await getDoc(doc(db!, 'users', author.id));
       const d = prof.exists() ? (prof.data() as any) : null;
       if (d) {
-        (author as any).cancerType = d.cancerType;
-        (author as any).stage = d.stage;
-        (author as any).age = typeof d.age === 'number' ? d.age : undefined;
+        // Only add fields if they have actual values (not undefined)
+        if (d.cancerType) (author as any).cancerType = d.cancerType;
+        if (d.stage) (author as any).stage = d.stage;
+        if (typeof d.age === 'number') (author as any).age = d.age;
       }
     }
   } catch {}
@@ -98,9 +99,10 @@ export const addAnswer = async (questionId: string, body: string): Promise<Answe
       const prof = await getDoc(doc(db!, 'users', author.id));
       const d = prof.exists() ? (prof.data() as any) : null;
       if (d) {
-        (author as any).cancerType = d.cancerType;
-        (author as any).stage = d.stage;
-        (author as any).age = typeof d.age === 'number' ? d.age : undefined;
+        // Only add fields if they have actual values (not undefined)
+        if (d.cancerType) (author as any).cancerType = d.cancerType;
+        if (d.stage) (author as any).stage = d.stage;
+        if (typeof d.age === 'number') (author as any).age = d.age;
       }
     }
   } catch {}

@@ -1,329 +1,291 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Animated, TouchableOpacity } from 'react-native';
-import { ButtonPrimary, ButtonSecondary, ButtonOutline, Card } from '../ui/components';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+  StatusBar,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { isConfigured } from '../firebase/app';
 import { theme } from '../ui/theme';
-import { isSmartwatch, scaleFontSize } from '../ui/responsive';
 
-const LoginScreen: React.FC = () => {
+const LoginScreenNew: React.FC = () => {
   const { signInEmail, signUpEmail, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [loading, setLoading] = useState<'signin' | 'signup' | 'google' | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+  const handleEmailAuth = async () => {
+    setError('');
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+    if (mode === 'signup' && password !== confirm) {
+      setError('Passwords do not match');
+      return;
+    }
 
-  console.log('[UI] isConfigured =', isConfigured);
-  
+    setLoading(true);
+    try {
+      if (mode === 'signin') {
+        await signInEmail(email, password);
+      } else {
+        await signUpEmail(email, password);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      setError(err?.message || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView 
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-          {/* Logo and Title */}
-          <View style={styles.header}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>LW</Text>
-            </View>
-            <Text style={styles.title}>LifeWeaver</Text>
-            <Text style={styles.subtitle}>
-              {isSmartwatch ? 'Cancer Awareness Q&A' : 'Cancer Awareness & Support Community'}
-            </Text>
+        {/* Logo Section */}
+        <View style={styles.logoSection}>
+          <View style={styles.logoCircle}>
+            <Ionicons name="heart" size={48} color="#FFFFFF" />
           </View>
+          <Text style={styles.appName}>VitalPath</Text>
+          <Text style={styles.tagline}>Cancer Support Community</Text>
+        </View>
 
-          {/* Auth Tabs */}
-          <View style={styles.tabsRow}>
-            <TouchableOpacity
-              onPress={() => setMode('signin')}
-              style={[styles.tabBtn, mode==='signin' && styles.tabBtnActive]}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.tabText, mode==='signin' && styles.tabTextActive]}>Sign In</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setMode('signup')}
-              style={[styles.tabBtn, mode==='signup' && styles.tabBtnActive]}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.tabText, mode==='signup' && styles.tabTextActive]}>Create Account</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Auth Form Card */}
-          <Card elevated style={styles.formCard}>
-            <Text style={styles.formTitle}>
-              {mode === 'signin' ? (isSmartwatch ? 'Sign In' : 'Welcome Back') : (isSmartwatch ? 'Sign Up' : 'Create Your Account')}
-            </Text>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                placeholder="your@email.com"
-                placeholderTextColor={theme.colors.subtext}
-                value={email}
-                onChangeText={setEmail}
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
+        {/* Auth Card */}
+        <View style={styles.authCard}>
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={20} color={theme.colors.danger} />
+              <Text style={styles.errorText}>{error}</Text>
             </View>
+          ) : null}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                placeholder="••••••••"
-                placeholderTextColor={theme.colors.subtext}
-                value={password}
-                onChangeText={setPassword}
-                style={styles.input}
-                secureTextEntry
-                autoComplete="password"
-              />
-            </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Email address"
+            placeholderTextColor={theme.colors.subtext}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+          />
 
-            {mode === 'signup' && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm Password</Text>
-                <TextInput
-                  placeholder="••••••••"
-                  placeholderTextColor={theme.colors.subtext}
-                  value={confirm}
-                  onChangeText={setConfirm}
-                  style={styles.input}
-                  secureTextEntry
-                  autoComplete="password"
-                />
-              </View>
-            )}
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor={theme.colors.subtext}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="password"
+          />
 
-            {!!error && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>⚠️ {error}</Text>
-              </View>
-            )}
-
-            <View style={styles.buttonGroup}>
-              {mode === 'signin' ? (
-                <ButtonPrimary
-                  title={loading === 'signin' ? 'Signing in…' : 'Sign In'}
-                  disabled={!!loading}
-                  size={isSmartwatch ? 'sm' : 'md'}
-                  onPress={async () => {
-                    setError('');
-                    const emailTrimmed = email.trim();
-                    const validEmail = /.+@.+\..+/.test(emailTrimmed);
-                    if (!validEmail) return setError('Please enter a valid email address.');
-                    if (!password) return setError('Please enter your password.');
-                    setLoading('signin');
-                    try {
-                      await signInEmail(emailTrimmed, password);
-                    } catch (e: any) {
-                      setError(e?.message || 'Failed to sign in');
-                    } finally {
-                      setLoading(null);
-                    }
-                  }}
-                />
-              ) : (
-                <ButtonPrimary
-                  title={loading === 'signup' ? 'Creating…' : 'Create Account'}
-                  disabled={!!loading}
-                  size={isSmartwatch ? 'sm' : 'md'}
-                  onPress={async () => {
-                    setError('');
-                    const emailTrimmed = email.trim();
-                    const validEmail = /.+@.+\..+/.test(emailTrimmed);
-                    if (!validEmail) return setError('Please enter a valid email address.');
-                    if (!password) return setError('Please enter a password.');
-                    if (password.length < 6) return setError('Password must be at least 6 characters.');
-                    if (password !== confirm) return setError('Passwords do not match.');
-                    setLoading('signup');
-                    try {
-                      await signUpEmail(emailTrimmed, password);
-                    } catch (e: any) {
-                      setError(e?.message || 'Failed to sign up');
-                    } finally {
-                      setLoading(null);
-                    }
-                  }}
-                />
-              )}
-            </View>
-
-            {!isSmartwatch && (
-              <>
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <ButtonOutline
-                  title={loading === 'google' ? 'Opening…' : '🌐 Continue with Google'}
-                  disabled={!!loading}
-                  onPress={async () => {
-                    setError('');
-                    setLoading('google');
-                    try {
-                      await signInWithGoogle();
-                    } catch (e: any) {
-                      setError(e?.message || 'Google sign-in failed');
-                    } finally {
-                      setLoading(null);
-                    }
-                  }}
-                />
-              </>
-            )}
-          </Card>
-
-          {!!loading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-            </View>
+          {mode === 'signup' && (
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm Password"
+              placeholderTextColor={theme.colors.subtext}
+              value={confirm}
+              onChangeText={setConfirm}
+              secureTextEntry
+              autoComplete="password"
+            />
           )}
 
-          {/* Disclaimer */}
-          <Text style={styles.disclaimer}>
-            {isSmartwatch 
-              ? 'For awareness only' 
-              : 'This app is for awareness only and does not replace professional medical advice.'}
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handleEmailAuth}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {mode === 'signin' ? 'Log In' : 'Sign Up'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {mode === 'signin' && (
+            <TouchableOpacity style={styles.forgotButton}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Google Sign In */}
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="logo-google" size={20} color="#4285F4" />
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Switch Mode */}
+        <View style={styles.switchMode}>
+          <Text style={styles.switchText}>
+            {mode === 'signin'
+              ? "Don't have an account? "
+              : 'Already have an account? '}
           </Text>
-          
-          {!isSmartwatch && (
-            <Text style={styles.configHint}>
-              Status: {isConfigured ? '✓ Connected' : '⚠️ Not configured'}
+          <TouchableOpacity onPress={() => setMode(mode === 'signin' ? 'signup' : 'signin')}>
+            <Text style={styles.switchLink}>
+              {mode === 'signin' ? 'Sign Up' : 'Log In'}
             </Text>
-          )}
-        </Animated.View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            By continuing, you agree to our Terms & Privacy Policy
+          </Text>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: theme.colors.bg,
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    padding: theme.spacing(isSmartwatch ? 1 : 2),
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
-  content: {
-    width: '100%',
-    maxWidth: isSmartwatch ? '100%' : 400,
-    alignSelf: 'center',
-  },
-  
-  // Header
-  header: {
+  logoSection: {
     alignItems: 'center',
-    marginBottom: theme.spacing(3),
+    marginBottom: 48,
   },
-  logo: {
-    width: scaleFontSize(isSmartwatch ? 48 : 80),
-    height: scaleFontSize(isSmartwatch ? 48 : 80),
-    borderRadius: scaleFontSize(isSmartwatch ? 24 : 40),
+  logoCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: theme.colors.primary,
-    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: theme.spacing(2),
+    alignItems: 'center',
+    marginBottom: 16,
     ...theme.shadows.lg,
   },
-  logoText: {
-    color: theme.colors.primaryText,
-    fontSize: scaleFontSize(isSmartwatch ? 20 : 36),
-    fontWeight: '800',
-  },
-  title: {
-    fontSize: scaleFontSize(isSmartwatch ? 18 : 32),
-    fontWeight: '800',
-    color: theme.colors.text,
-    marginBottom: theme.spacing(0.5),
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    fontSize: scaleFontSize(isSmartwatch ? 11 : 16),
-    color: theme.colors.subtext,
-    textAlign: 'center',
-  },
-  
-  // Form Card
-  formCard: {
-    marginBottom: theme.spacing(2),
-  },
-  formTitle: {
-    fontSize: scaleFontSize(isSmartwatch ? 16 : 22),
+  appName: {
+    fontSize: 32,
     fontWeight: '700',
     color: theme.colors.text,
-    marginBottom: theme.spacing(2),
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  
-  // Input Group
-  inputGroup: {
-    marginBottom: theme.spacing(1.5),
+  tagline: {
+    fontSize: 16,
+    color: theme.colors.subtext,
   },
-  label: {
-    fontSize: scaleFontSize(isSmartwatch ? 11 : 14),
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: theme.spacing(0.5),
-  },
-  input: {
+  authCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 24,
+    ...theme.shadows.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing(isSmartwatch ? 1 : 1.5),
-    fontSize: scaleFontSize(isSmartwatch ? 12 : 16),
-    color: theme.colors.text,
-    backgroundColor: theme.colors.bg,
   },
-  
-  // Error Box
-  errorBox: {
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: theme.colors.dangerLight,
-    borderRadius: theme.radius.sm,
-    padding: theme.spacing(1.5),
-    marginBottom: theme.spacing(2),
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
   },
   errorText: {
+    flex: 1,
+    fontSize: 14,
     color: theme.colors.danger,
-    fontSize: scaleFontSize(isSmartwatch ? 11 : 14),
+  },
+  input: {
+    height: 52,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: theme.colors.text,
+    backgroundColor: theme.colors.bg,
+    marginBottom: 12,
+  },
+  primaryButton: {
+    backgroundColor: theme.colors.primary,
+    height: 52,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    ...theme.shadows.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
+    color: '#FFFFFF',
   },
-  
-  // Buttons
-  buttonGroup: {
-    marginTop: theme.spacing(1),
+  forgotButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  
-  // Divider
+  forgotText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '500',
+  },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: theme.spacing(2),
+    marginVertical: 24,
   },
   dividerLine: {
     flex: 1,
@@ -331,60 +293,54 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.border,
   },
   dividerText: {
-    marginHorizontal: theme.spacing(2),
+    marginHorizontal: 16,
+    fontSize: 14,
     color: theme.colors.subtext,
-    fontSize: scaleFontSize(14),
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  
-  // Loading
-  loadingContainer: {
-    marginTop: theme.spacing(2),
-    alignItems: 'center',
-  },
-  
-  // Footer
-  disclaimer: {
-    marginTop: theme.spacing(2),
-    color: theme.colors.subtext,
-    textAlign: 'center',
-    fontSize: scaleFontSize(isSmartwatch ? 10 : 12),
-    lineHeight: scaleFontSize(isSmartwatch ? 14 : 18),
-    paddingHorizontal: theme.spacing(2),
-  },
-  configHint: {
-    marginTop: theme.spacing(1),
-    color: theme.colors.subtext,
-    textAlign: 'center',
-    fontSize: scaleFontSize(11),
-  },
-  // Tabs
-  tabsRow: {
+  googleButton: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.radius.full,
-    padding: 4,
-    marginBottom: theme.spacing(1.5),
+    backgroundColor: '#FFFFFF',
+    gap: 12,
   },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: theme.spacing(0.75),
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: theme.colors.text,
+  },
+  switchMode: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: theme.radius.full,
+    marginTop: 32,
   },
-  tabBtnActive: {
-    backgroundColor: theme.colors.primaryLight,
-  },
-  tabText: {
+  switchText: {
+    fontSize: 14,
     color: theme.colors.subtext,
-    fontWeight: '700',
-    fontSize: scaleFontSize(12),
   },
-  tabTextActive: {
+  switchLink: {
+    fontSize: 14,
+    fontWeight: '600',
     color: theme.colors.primary,
+  },
+  footer: {
+    marginTop: 32,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  footerText: {
+    fontSize: 12,
+    color: theme.colors.subtext,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 
-export default LoginScreen;
+export default LoginScreenNew;

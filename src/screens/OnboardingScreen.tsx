@@ -113,7 +113,7 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
           setSaving(false);
           return Alert.alert('Missing info', 'Please fill name, cancer type, and stage.');
         }
-        await saveProfile({ displayName: name, photoURL });
+        // For diagnosed users, use saveOnboardingProfile which handles everything
         await saveOnboardingProfile({
           displayName: name,
           photoURL,
@@ -132,6 +132,7 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
           allowMessages,
         });
       } else {
+        // For non-diagnosed users, use saveProfile with onboardingComplete flag
         await saveProfile({
           displayName: name,
           photoURL,
@@ -145,8 +146,21 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
           allowMessages,
         });
       }
-      console.log('OnboardingScreen - Profile saved, navigating to Main');
-      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+      console.log('OnboardingScreen - Profile saved successfully');
+      Alert.alert(
+        'Welcome to VitalPath!',
+        'Your profile has been set up. Let\'s get started!',
+        [
+          {
+            text: 'Continue',
+            onPress: () => {
+              // Auth context will automatically detect onboarding completion
+              // and switch to the main navigator
+              console.log('OnboardingScreen - User dismissed success alert');
+            }
+          }
+        ]
+      );
     } catch (e: any) {
       console.error('OnboardingScreen - Save error:', e);
       Alert.alert('Save failed', e?.message ?? 'Unknown error');

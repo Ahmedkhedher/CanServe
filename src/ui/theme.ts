@@ -2,34 +2,35 @@ import { scaleFontSize, scaleSpacing, scaleSize, isSmartwatch } from './responsi
 
 export const theme = {
   colors: {
-    bg: '#F7F6FB',            // soft lavender tint
-    bgDark: '#1F2937',        // dark mode background
+    // Facebook-inspired blue and white theme
+    bg: '#F0F2F5',            // Facebook light gray background
+    bgDark: '#18191A',        // dark mode background
     card: '#FFFFFF',
-    cardDark: '#374151',      // dark mode card
-    text: '#1F2937',
-    textDark: '#F9FAFB',      // dark mode text
-    subtext: '#6B7280',
-    subtextDark: '#9CA3AF',   // dark mode subtext
-    primary: '#8B5CF6',       // violet (calming)
-    primaryHover: '#7C3AED',  // darker violet for hover
-    primaryLight: '#A78BFA',  // lighter violet
+    cardDark: '#242526',      // dark mode card
+    text: '#050505',          // almost black text
+    textDark: '#E4E6EB',      // dark mode text
+    subtext: '#65676B',       // Facebook gray text
+    subtextDark: '#B0B3B8',   // dark mode subtext
+    primary: '#1877F2',       // Facebook blue
+    primaryHover: '#166FE5',  // darker blue for hover
+    primaryLight: '#E7F3FF',  // light blue background
     primaryText: '#FFFFFF',
-    border: '#E5E7EB',
-    borderDark: '#4B5563',    // dark mode border
-    accent: '#22C55E',        // calming green
-    accentLight: '#86EFAC',   // light green
-    danger: '#EF4444',
-    dangerLight: '#FCA5A5',   // light red
-    warning: '#F59E0B',       // amber
-    info: '#3B82F6',          // blue
-    success: '#10B981',       // emerald
+    border: '#CED0D4',        // light gray border
+    borderDark: '#3E4042',    // dark mode border
+    accent: '#42B72A',        // Facebook green
+    accentLight: '#E7F5E4',   // light green
+    danger: '#F02849',        // Facebook red
+    dangerLight: '#FFE5E9',   // light red
+    warning: '#F7B928',       // Facebook yellow
+    info: '#1877F2',          // Facebook blue
+    success: '#42B72A',       // Facebook green
     
     // Gradient colors
-    gradientStart: '#8B5CF6',
-    gradientEnd: '#EC4899',   // pink
+    gradientStart: '#1877F2',
+    gradientEnd: '#0A66C2',   // LinkedIn blue
     
     // Overlay
-    overlay: 'rgba(0, 0, 0, 0.5)',
+    overlay: 'rgba(0, 0, 0, 0.6)',
     overlayLight: 'rgba(0, 0, 0, 0.3)',
   },
   spacing: (n: number) => scaleSpacing(n * 8),

@@ -32,6 +32,19 @@ export async function loadProfile(): Promise<AppProfile | null> {
   return { displayName: u.displayName || 'Member', photoURL: u.photoURL || undefined };
 }
 
+export async function loadUserProfile(userId: string): Promise<AppProfile | null> {
+  if (!userId) return null;
+  try {
+    const snap = await getDoc(doc(db!, 'users', userId));
+    if (snap.exists()) {
+      return (snap.data() as AppProfile) || null;
+    }
+  } catch (e) {
+    console.error('[Profile] Failed to load user profile:', e);
+  }
+  return null;
+}
+
 export async function saveProfile(p: AppProfile): Promise<void> {
   const u = auth?.currentUser;
   if (!u) throw new Error('Not signed in');
@@ -39,6 +52,14 @@ export async function saveProfile(p: AppProfile): Promise<void> {
   const authUpdate1: { displayName: string; photoURL?: string } = { displayName: p.displayName };
   if (p.photoURL) authUpdate1.photoURL = p.photoURL;
   await updateProfile(u, authUpdate1);
+  
+  // Force refresh the auth token to reflect profile changes
+  try {
+    await u.reload();
+  } catch (e) {
+    console.warn('[Profile] Failed to reload user', e);
+  }
+  
   // Persist in Firestore with all fields
   await setDoc(
     doc(db!, 'users', u.uid),
@@ -93,6 +114,14 @@ export async function saveOnboardingProfile(p: Required<Pick<AppProfile, 'displa
   const authUpdate2: { displayName: string; photoURL?: string } = { displayName: p.displayName };
   if (p.photoURL) authUpdate2.photoURL = p.photoURL;
   await updateProfile(u, authUpdate2);
+  
+  // Force refresh the auth token to reflect profile changes
+  try {
+    await u.reload();
+  } catch (e) {
+    console.warn('[Profile] Failed to reload user', e);
+  }
+  
   // Persist all onboarding data in Firestore
   await setDoc(
     doc(db!, 'users', u.uid),
