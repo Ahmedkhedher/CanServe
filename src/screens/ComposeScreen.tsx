@@ -40,7 +40,7 @@ const ComposeScreen: React.FC<Props> = React.memo(({ route, navigation }) => {
     try {
       if (mode === 'question') {
         const q = await addQuestion(content);
-        navigation.replace('Question', { id: q.id });
+        navigation.navigate('Feed');
       } else {
         const qid = route.params?.questionId;
         if (!qid) {

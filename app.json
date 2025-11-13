@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "VitalPath",
-    "slug": "vitalpath",
+    "name": "CanServe",
+    "slug": "canserve",
     "version": "1.0.0",
-    "scheme": "vitalpath",
+    "scheme": "canserve",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.vitalpath.cancerapp",
+      "package": "com.canserve.cancerapp",
       "versionCode": 1,
       "permissions": [
         "CAMERA",

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,6 @@ import {
   addAnswer,
 } from '../data/store';
 import { theme } from '../ui/theme';
-import { useSubmission } from '../hooks/useSubmission';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Feed'>;
 
@@ -36,23 +35,15 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   const [items, setItems] = useState<Question[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [askText, setAskText] = useState('');
-  const [showComposer, setShowComposer] = useState(false);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState('');
   const [showAnswersForQuestion, setShowAnswersForQuestion] = useState<string | null>(null);
   const [answersMap, setAnswersMap] = useState<Record<string, Answer[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
   
-  // New submission system
-  const {
-    submitQuestion,
-    submitAnswer,
-    isSubmitting,
-    error: submissionError,
-    validationErrors,
-    reset: resetSubmission
-  } = useSubmission();
+  // Refs to maintain focus
+  const answerInputRef = useRef<TextInput>(null);
+  
 
   useEffect(() => {
     loadQuestions();
@@ -71,23 +62,19 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const onRefresh = useCallback(async () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     try {
       await loadQuestions();
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  };
 
   // Optimized text change handlers to prevent re-render issues
-  const handleAskTextChange = useCallback((text: string) => {
-    setAskText(text);
-  }, []);
-
-  const handleAnswerTextChange = useCallback((text: string) => {
+  const handleAnswerTextChange = (text: string) => {
     setAnswerText(text);
-  }, []);
+  };
 
   const onFollow = async (id: string) => {
     toggleFollow(id);
@@ -109,39 +96,6 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleSubmitQuestion = async () => {
-    const text = askText.trim();
-    
-    if (!text || text.length < 10) {
-      Alert.alert('Invalid Question', 'Please write at least 10 characters and make sure it\'s a proper question.');
-      return;
-    }
-    
-    Alert.alert(
-      'Post Question?',
-      'Your question will be visible to the community.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Post',
-          onPress: async () => {
-            try {
-              console.log('Submitting question:', text);
-              const question = await addQuestion(text);
-              console.log('Question submitted successfully:', question.id);
-              setAskText('');
-              setShowComposer(false);
-              await loadQuestions();
-              Alert.alert('✅ Posted!', 'Your question is now live');
-            } catch (error: any) {
-              console.error('Failed to submit question:', error);
-              Alert.alert('Error', error?.message || 'Failed to post question. Please try again.');
-            }
-          }
-        },
-      ]
-    );
-  };
 
   const handleToggleAnswer = (questionId: string) => {
     if (expandedQuestionId === questionId) {
@@ -335,6 +289,8 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.answerLabel}>Write your answer...</Text>
           </View>
           <TextInput
+            ref={answerInputRef}
+            key={`answer-input-${expandedQuestionId}`}
             style={styles.answerInput}
             placeholder="Share your thoughts and help others..."
             placeholderTextColor={theme.colors.subtext}
@@ -353,10 +309,8 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             scrollEnabled={true}
             selectTextOnFocus={false}
             clearTextOnFocus={false}
+            enablesReturnKeyAutomatically={false}
           />
-          <Text style={styles.characterCount}>
-            {answerText.length}/500
-          </Text>
           <View style={styles.answerActions}>
             <TouchableOpacity
               style={styles.cancelButton}
@@ -389,69 +343,19 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
 
   const ListHeader = () => (
     <View>
-      {/* Composer */}
-      {showComposer ? (
-        <View style={styles.composer}>
-          <View style={styles.composerHeader}>
-            <Text style={styles.composerTitle}>Create Post</Text>
-            <TouchableOpacity 
-              onPress={() => setShowComposer(false)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.subtext} />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            style={styles.composerInput}
-            placeholder="What's on your mind?"
-            placeholderTextColor={theme.colors.subtext}
-            value={askText}
-            onChangeText={handleAskTextChange}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            maxLength={300}
-            autoFocus={true}
-            blurOnSubmit={false}
-            returnKeyType="default"
-            autoCorrect={true}
-            autoCapitalize="sentences"
-            keyboardType="default"
-            scrollEnabled={true}
-            selectTextOnFocus={false}
-            clearTextOnFocus={false}
-          />
-          <Text style={styles.characterCount}>
-            {askText.length}/300 characters
+      {/* Ask Question Button */}
+      <TouchableOpacity
+        style={styles.quickComposer}
+        onPress={() => navigation.navigate('Compose', { mode: 'question' })}
+      >
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.displayName?.charAt(0).toUpperCase() || 'U'}
           </Text>
-          <TouchableOpacity 
-            style={[
-              styles.postButton, 
-              (askText.length < 10 || isSubmitting) && styles.postButtonDisabled
-            ]} 
-            onPress={handleSubmitQuestion}
-            disabled={askText.length < 10 || isSubmitting}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.postButtonText}>
-              {isSubmitting ? 'Posting...' : 'Post'}
-            </Text>
-          </TouchableOpacity>
         </View>
-      ) : (
-        <TouchableOpacity
-          style={styles.quickComposer}
-          onPress={() => setShowComposer(true)}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.displayName?.charAt(0).toUpperCase() || 'U'}
-            </Text>
-          </View>
-          <Text style={styles.quickComposerText}>What's on your mind?</Text>
-        </TouchableOpacity>
-      )}
+        <Text style={styles.quickComposerText}>Ask a question...</Text>
+        <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
+      </TouchableOpacity>
 
       {/* Separator */}
       <View style={styles.separator} />
@@ -493,7 +397,7 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
           </Text>
           <TouchableOpacity 
             style={styles.emptyButton}
-            onPress={() => setShowComposer(true)}
+            onPress={() => navigation.navigate('Compose', { mode: 'question' })}
           >
             <Text style={styles.emptyButtonText}>Ask Question</Text>
           </TouchableOpacity>
@@ -846,14 +750,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text,
     lineHeight: 20,
-  },
-  // Character counter
-  characterCount: {
-    fontSize: 12,
-    color: theme.colors.subtext,
-    textAlign: 'right',
-    marginTop: 4,
-    marginBottom: 8,
   },
   // Loading state
   loadingContainer: {

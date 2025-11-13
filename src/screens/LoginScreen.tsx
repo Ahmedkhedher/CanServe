@@ -77,7 +77,7 @@ const LoginScreenNew: React.FC = () => {
           <View style={styles.logoCircle}>
             <Ionicons name="heart" size={48} color="#FFFFFF" />
           </View>
-          <Text style={styles.appName}>VitalPath</Text>
+          <Text style={styles.appName}>CanServe</Text>
           <Text style={styles.tagline}>Cancer Support Community</Text>
         </View>
 

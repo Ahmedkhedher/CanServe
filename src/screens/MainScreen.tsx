@@ -105,7 +105,7 @@ const MainScreen: React.FC<any> = ({ navigation }) => {
             >
               <Ionicons name="heart" size={20} color="#FFFFFF" />
             </LinearGradient>
-            <Text style={styles.appName}>VitalPath</Text>
+            <Text style={styles.appName}>CanServe</Text>
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.headerIcon}>

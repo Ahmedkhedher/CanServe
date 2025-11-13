@@ -151,7 +151,7 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
       }
       console.log('OnboardingScreen - Profile saved successfully');
       Alert.alert(
-        'Welcome to VitalPath!',
+        'Welcome to CanServe!',
         'Your profile has been set up. Let\'s get started!',
         [
           {
