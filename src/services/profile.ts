@@ -1,7 +1,6 @@
 import { auth, db } from '../firebase/app';
 import { updateProfile } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { uploadImageOffline } from './offlineImageStorage';
 
 export type AppProfile = {
   displayName: string;
@@ -112,19 +111,7 @@ export async function saveProfile(p: AppProfile): Promise<void> {
   console.log('✅ Profile saved to Firestore successfully');
 }
 
-export async function uploadAvatarAsync(uri: string): Promise<string> {
-  const u = auth?.currentUser;
-  if (!u) throw new Error('Not signed in');
-  
-  console.log('🔄 Uploading avatar using offline storage (no server calls)...', uri);
-  
-  // Upload using completely offline method (no network calls)
-  const filename = `avatar-${u.uid}-${Date.now()}.jpg`;
-  const result = await uploadImageOffline(uri, 'avatars', filename);
-  
-  console.log('✅ Avatar upload successful (offline):', result.success);
-  return result.url;
-}
+// uploadAvatarAsync removed - now using Firebase Storage directly
 
 export async function saveOnboardingProfile(p: Required<Pick<AppProfile, 'displayName'>> & {
   photoURL?: string;
@@ -144,9 +131,9 @@ export async function saveOnboardingProfile(p: Required<Pick<AppProfile, 'displa
 }): Promise<void> {
   const u = auth?.currentUser;
   if (!u) throw new Error('Not signed in');
-  // Update Firebase Auth profile (displayName + optional photoURL)
-  const authUpdate2: { displayName: string; photoURL?: string } = { displayName: p.displayName };
-  if (p.photoURL) authUpdate2.photoURL = p.photoURL;
+  // Update Firebase Auth profile (displayName only - photoURL saved to Firestore)
+  // Note: We don't save photoURL to Firebase Auth because base64 images are too long
+  const authUpdate2: { displayName: string } = { displayName: p.displayName };
   await updateProfile(u, authUpdate2);
   
   // Force refresh the auth token to reflect profile changes

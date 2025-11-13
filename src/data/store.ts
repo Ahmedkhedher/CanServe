@@ -12,6 +12,7 @@ export type Question = {
   answersCount: number;
   createdAt?: any;
   following?: boolean;
+  images?: string[];
 };
 export type Answer = {
   id: string;
@@ -20,6 +21,7 @@ export type Answer = {
   body: string;
   upvotes: number;
   createdAt?: any;
+  imageUrl?: string;
 };
 
 const followingLocal = new Set<string>();
@@ -42,7 +44,26 @@ const currentUser = (): UserRef => {
 export const getQuestions = async (): Promise<Question[]> => {
   const q = query(qCol(), orderBy('createdAt', 'desc'), limit(25));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ following: isFollowingLocal(d.id), ...({ id: d.id, ...(d.data() as any) }) }));
+  const questions = snap.docs.map((d) => {
+    const data = d.data() as any;
+    const question = { following: isFollowingLocal(d.id), id: d.id, ...data };
+    
+    // Debug images loading
+    if (data.images) {
+      console.log('📥 Loading question with images from DB:', {
+        questionId: d.id,
+        title: data.title?.substring(0, 30) + '...',
+        imageCount: data.images.length,
+        firstImageType: data.images[0]?.startsWith('data:image/') ? 'base64' : 'other',
+        firstImageSize: data.images[0]?.length || 0
+      });
+    }
+    
+    return question;
+  });
+  
+  console.log('📥 Total questions loaded:', questions.length, 'with images:', questions.filter(q => q.images?.length > 0).length);
+  return questions;
 };
 
 export const getQuestionById = async (id: string): Promise<Question | null> => {
@@ -63,7 +84,7 @@ export const getAnswersFor = async (questionId: string): Promise<Answer[]> => {
   });
 };
 
-export const addQuestion = async (title: string): Promise<Question> => {
+export const addQuestion = async (title: string, images?: string[]): Promise<Question> => {
   const author = currentUser();
   // Enrich with public illness profile if available
   try {
@@ -75,10 +96,29 @@ export const addQuestion = async (title: string): Promise<Question> => {
         if (d.cancerType) (author as any).cancerType = d.cancerType;
         if (d.stage) (author as any).stage = d.stage;
         if (typeof d.age === 'number') (author as any).age = d.age;
+        if (d.photoURL) (author as any).photoURL = d.photoURL;
       }
     }
   } catch {}
-  const data = {
+  
+  console.log('📝 Creating question with author data:', {
+    authorId: author.id,
+    authorName: author.name,
+    hasPhotoURL: !!(author as any).photoURL,
+    photoURL: (author as any).photoURL ? (author as any).photoURL.substring(0, 50) + '...' : 'No photo URL',
+    hasImages: !!(images && images.length > 0),
+    imageCount: images ? images.length : 0,
+    firstImageType: images?.[0]?.startsWith('data:image/') ? 'base64' : 'other'
+  });
+  
+  console.log('🔧 Before creating data object:', {
+    hasImages: !!images,
+    imageCount: images ? images.length : 0,
+    imagesArray: images,
+    willIncludeImages: !!(images && images.length > 0)
+  });
+  
+  const baseData = {
     title,
     author,
     topic: 'General',
@@ -87,12 +127,43 @@ export const addQuestion = async (title: string): Promise<Question> => {
     answersCount: 0,
     createdAt: serverTimestamp(),
   };
+  
+  // Explicitly add images if they exist
+  const data = images && images.length > 0 
+    ? { ...baseData, images: images }
+    : baseData;
+  
+  console.log('🔧 Final data object being saved:', {
+    hasImages: 'images' in data,
+    imageCount: (data as any).images ? (data as any).images.length : 0,
+    allKeys: Object.keys(data)
+  });
+  
+  console.log('🔧 After creating data object:', {
+    hasImagesInData: !!(data as any).images,
+    dataKeys: Object.keys(data),
+    imagesFieldExists: 'images' in data
+  });
+  
+  console.log('💾 Saving question to database:', {
+    ...data,
+    images: (data as any).images ? `${(data as any).images.length} images` : 'No images'
+  });
+  
   const ref = await addDoc(qCol(), data as any);
+  
+  console.log('✅ Question saved with ID:', ref.id);
+  
   return { id: ref.id, ...(data as any) } as Question;
 };
 
-export const addAnswer = async (questionId: string, body: string): Promise<Answer> => {
-  console.log('addAnswer called:', { questionId, bodyLength: body.length });
+export const addAnswer = async (questionId: string, body: string, imageUrl?: string): Promise<Answer> => {
+  console.log('addAnswer called:', { 
+    questionId, 
+    bodyLength: body.length,
+    hasImage: !!imageUrl,
+    imageType: imageUrl?.startsWith('data:image/') ? 'base64' : 'other'
+  });
   
   if (!db) {
     throw new Error('Firebase not initialized');
@@ -111,6 +182,7 @@ export const addAnswer = async (questionId: string, body: string): Promise<Answe
         if (d.cancerType) (author as any).cancerType = d.cancerType;
         if (d.stage) (author as any).stage = d.stage;
         if (typeof d.age === 'number') (author as any).age = d.age;
+        if (d.photoURL) (author as any).photoURL = d.photoURL;
       }
     }
   } catch (profileError) {
@@ -123,9 +195,13 @@ export const addAnswer = async (questionId: string, body: string): Promise<Answe
     body,
     upvotes: 0,
     createdAt: serverTimestamp(),
+    ...(imageUrl && { imageUrl }),
   };
   
-  console.log('Adding answer to Firestore:', data);
+  console.log('Adding answer to Firestore:', {
+    ...data,
+    imageUrl: data.imageUrl ? data.imageUrl.substring(0, 50) + '...' : 'No image'
+  });
   const ref = await addDoc(aCol(), data as any);
   console.log('Answer added with ID:', ref.id);
   

@@ -13,9 +13,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../ui/theme';
-import { loadProfile, saveProfile, uploadAvatarAsync } from '../services/profile';
+import { loadProfile, saveProfile } from '../services/profile';
 
 const ProfileScreenNew: React.FC<any> = ({ navigation }) => {
   const { signOut, user } = useAuth();
@@ -43,60 +44,141 @@ const ProfileScreenNew: React.FC<any> = ({ navigation }) => {
         age: p.age
       });
       
-      setDisplayName(p.displayName || 'Member');
-      setPhotoURL(p.photoURL);
+      setDisplayName(p.displayName || user?.displayName || 'Member');
+      // Use Firebase Auth photoURL as primary source, fallback to profile photoURL
+      setPhotoURL(user?.photoURL || p.photoURL);
       if (p.cancerType) setCancerType(p.cancerType);
       if (p.stage) setStage(p.stage);
       if (typeof p.age === 'number') setAge(String(p.age));
     } else {
-      console.log('❌ No profile found');
+      console.log('❌ No profile found, using Firebase Auth data');
+      setDisplayName(user?.displayName || 'Member');
+      setPhotoURL(user?.photoURL || undefined);
     }
   };
 
   const pickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== 'granted') {
-      return Alert.alert('Permission required', 'Please allow photo library access.');
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
-    if (!res.canceled && res.assets?.[0]?.uri) {
-      try {
-        setSaving(true);
-        console.log('🔄 Uploading and saving profile picture...');
+    try {
+      setSaving(true);
+      console.log('🔄 Starting profile image picker for platform:', Platform.OS);
+      
+      if (Platform.OS === 'web') {
+        // Web implementation using HTML file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
         
-        // Upload the image
-        const url = await uploadAvatarAsync(res.assets[0].uri);
-        console.log('✅ Image uploaded, now saving to profile...', url.substring(0, 50) + '...');
+        return new Promise<void>((resolve, reject) => {
+          input.onchange = async (event: any) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              try {
+                console.log('🔄 Converting web profile picture to base64...');
+                
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                  if (typeof reader.result === 'string') {
+                    console.log('✅ Web profile base64 conversion successful');
+                    const url = reader.result;
+                    
+                    // Update local state
+                    setPhotoURL(url);
+                    
+                    // Save to database
+                    await saveProfile({
+                      displayName: displayName.trim() || 'Member',
+                      photoURL: url,
+                      cancerType: cancerType.trim() || undefined,
+                      stage: stage.trim() || undefined,
+                      age: Number.isFinite(parseInt(age, 10)) ? parseInt(age, 10) : undefined,
+                    });
+                    
+                    console.log('✅ Web profile picture converted and saved!');
+                    await loadUserProfile();
+                    Alert.alert('Success', 'Profile picture updated! Everyone can now see it.');
+                    resolve();
+                  } else {
+                    reject(new Error('Failed to convert to base64'));
+                  }
+                };
+                reader.onerror = () => reject(new Error('FileReader error'));
+                reader.readAsDataURL(file);
+              } catch (e: any) {
+                console.error('❌ Web profile picture update failed:', e);
+                Alert.alert('Update failed', e?.message ?? 'Could not update profile picture');
+                reject(e);
+              }
+            } else {
+              resolve(); // User canceled
+            }
+          };
+          
+          input.oncancel = () => resolve(); // User canceled
+          input.click();
+        });
+      } else {
+        // Mobile implementation using expo-image-picker
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          setSaving(false);
+          return Alert.alert('Permission required', 'Please allow photo library access.');
+        }
         
-        // Update local state
-        setPhotoURL(url);
-        
-        // Immediately save to database
-        await saveProfile({
-          displayName: displayName.trim() || 'Member',
-          photoURL: url,
-          cancerType: cancerType.trim() || undefined,
-          stage: stage.trim() || undefined,
-          age: Number.isFinite(parseInt(age, 10)) ? parseInt(age, 10) : undefined,
+        const res = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.8,
+          allowsEditing: true,
+          aspect: [1, 1],
         });
         
-        console.log('✅ Profile picture saved successfully!');
-        
-        // Reload profile to confirm it was saved
-        await loadUserProfile();
-        
-        Alert.alert('Success', 'Profile picture updated and saved!');
-      } catch (e: any) {
-        console.error('❌ Profile picture save failed:', e);
-        Alert.alert('Upload failed', e?.message ?? 'Could not save profile picture');
-      } finally {
-        setSaving(false);
+        if (!res.canceled && res.assets?.[0]?.uri) {
+          console.log('🔄 Converting mobile profile picture to base64...');
+          
+          // Convert to base64 directly using a more reliable method
+          const response = await fetch(res.assets[0].uri);
+          const blob = await response.blob();
+          
+          const base64Url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              if (typeof reader.result === 'string') {
+                console.log('✅ Mobile profile base64 conversion successful');
+                resolve(reader.result);
+              } else {
+                reject(new Error('Failed to convert to base64'));
+              }
+            };
+            reader.onerror = () => reject(new Error('FileReader error'));
+            reader.readAsDataURL(blob);
+          });
+          
+          const url = base64Url;
+          
+          // Update local state
+          setPhotoURL(url);
+          
+          // Save to database
+          await saveProfile({
+            displayName: displayName.trim() || 'Member',
+            photoURL: url,
+            cancerType: cancerType.trim() || undefined,
+            stage: stage.trim() || undefined,
+            age: Number.isFinite(parseInt(age, 10)) ? parseInt(age, 10) : undefined,
+          });
+          
+          console.log('✅ Mobile profile picture converted and saved!');
+          
+          // Reload profile to confirm it was saved
+          await loadUserProfile();
+          
+          Alert.alert('Success', 'Profile picture updated! Everyone can now see it.');
+        }
       }
+    } catch (e: any) {
+      console.error('❌ Profile picture update failed:', e);
+      Alert.alert('Update failed', e?.message ?? 'Could not update profile picture');
+    } finally {
+      setSaving(false);
     }
   };
 

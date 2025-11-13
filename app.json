@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CanServe",
-    "slug": "canserve",
+    "slug": "vitalpath",
     "version": "1.0.0",
     "scheme": "canserve",
     "orientation": "portrait",
@@ -44,6 +44,7 @@
       "eas": {
         "projectId": "8d03d88d-fc4f-41d8-ad3f-7897e2d364ae"
       }
-    }
+    },
+    "owner": "ahmedkad"
   }
 }

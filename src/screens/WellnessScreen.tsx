@@ -8,6 +8,7 @@ import {
   StatusBar,
   SafeAreaView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -52,10 +53,19 @@ const WellnessScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, []);
 
-  const renderWellnessCard = (icon: string, title: string, content: string, color: string) => (
+  const renderWellnessCard = (icon: string, title: string, content: string, color: string, imagePath?: any) => (
     <View style={styles.wellnessCard} key={title}>
-      <View style={[styles.iconContainer, { backgroundColor: color }]}>
-        <Ionicons name={icon as any} size={24} color="#FFFFFF" />
+      <View style={styles.cardHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: color }]}>
+          <Ionicons name={icon as any} size={24} color="#FFFFFF" />
+        </View>
+        {imagePath && (
+          <Image 
+            source={imagePath} 
+            style={styles.wellnessImage}
+            resizeMode="contain"
+          />
+        )}
       </View>
       <View style={styles.cardContent}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -80,7 +90,14 @@ const WellnessScreen: React.FC<Props> = ({ navigation, route }) => {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {!suggestions ? (
           <View style={styles.profileCard}>
-            <Text style={styles.sectionTitle}>Your Profile</Text>
+            <View style={styles.profileHeader}>
+              <Text style={styles.sectionTitle}>Your Profile</Text>
+              <Image 
+                source={require('../../assets/better/Healthy.png')} 
+                style={styles.profileHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
             
             <Text style={styles.label}>Cancer Type</Text>
             <View style={styles.chipRow}>
@@ -133,12 +150,19 @@ const WellnessScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         ) : (
           <View style={styles.resultsContainer}>
-            <Text style={styles.sectionTitle}>Your Personalized Wellness Plan</Text>
+            <View style={styles.resultsHeader}>
+              <Text style={styles.sectionTitle}>Your Personalized Wellness Plan</Text>
+              <Image 
+                source={require('../../assets/better/Gym-guy.png')} 
+                style={styles.resultsHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
             
-            {renderWellnessCard('restaurant', 'Diet', suggestions.diet, '#4CAF50')}
-            {renderWellnessCard('water', 'Hydration', suggestions.hydration, '#2196F3')}
-            {renderWellnessCard('fitness', 'Activity', suggestions.activity, '#FF9800')}
-            {renderWellnessCard('bed', 'Sleep', suggestions.sleep, '#9C27B0')}
+            {renderWellnessCard('restaurant', 'Diet', suggestions.diet, '#4CAF50', require('../../assets/better/Healthy.png'))}
+            {renderWellnessCard('water', 'Hydration', suggestions.hydration, '#2196F3', require('../../assets/better/Coffee.png'))}
+            {renderWellnessCard('fitness', 'Activity', suggestions.activity, '#FF9800', require('../../assets/better/Dumbbell.png'))}
+            {renderWellnessCard('bed', 'Sleep', suggestions.sleep, '#9C27B0', require('../../assets/better/Bed.png'))}
 
             <TouchableOpacity 
               onPress={() => setSuggestions(null)} 
@@ -194,8 +218,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     ...theme.shadows.sm,
   },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  profileHeaderImage: {
+    width: 80,
+    height: 80,
+  },
   resultsContainer: {
     flex: 1,
+  },
+  resultsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  resultsHeaderImage: {
+    width: 100,
+    height: 100,
   },
   sectionTitle: {
     fontSize: 24,
@@ -278,9 +322,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     ...theme.shadows.sm,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   iconContainer: {
     width: 48,
@@ -289,6 +336,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
+  },
+  wellnessImage: {
+    width: 60,
+    height: 60,
+    marginLeft: 'auto',
   },
   cardContent: {
     flex: 1,

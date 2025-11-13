@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, Image, TouchableOpacity, Alert, Acti
 import * as ImagePicker from 'expo-image-picker';
 import { ButtonPrimary, Card } from '../ui/components';
 import { theme } from '../ui/theme';
-import { uploadAvatarAsync, saveProfile, saveOnboardingProfile, loadProfile } from '../services/profile';
+import { saveProfile, saveOnboardingProfile, loadProfile } from '../services/profile';
 
 const AVATARS = [
   'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=800&auto=format&fit=crop',
@@ -87,9 +87,27 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
     if (!res.canceled && res.assets?.[0]?.uri) {
       try {
         setSaving(true);
-        console.log('🔄 Uploading profile picture in onboarding...');
-        const url = await uploadAvatarAsync(res.assets[0].uri);
-        console.log('✅ Profile picture uploaded in onboarding:', url.substring(0, 50) + '...');
+        console.log('🔄 Converting profile picture to base64...');
+        
+        // Convert to base64 directly
+        const response = await fetch(res.assets[0].uri);
+        const blob = await response.blob();
+        
+        const url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+              console.log('✅ Direct base64 conversion successful');
+              resolve(reader.result);
+            } else {
+              reject(new Error('Failed to convert to base64'));
+            }
+          };
+          reader.onerror = () => reject(new Error('FileReader error'));
+          reader.readAsDataURL(blob);
+        });
+        
+        console.log('✅ Profile picture converted:', url.substring(0, 50) + '...');
         setPhotoURL(url);
       } catch (e: any) {
         console.error('❌ Onboarding profile picture upload failed:', e);

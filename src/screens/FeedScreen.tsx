@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -11,8 +12,11 @@ import {
   StatusBar,
   RefreshControl,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +30,7 @@ import {
   addQuestion,
   addAnswer,
 } from '../data/store';
+import { loadProfile, AppProfile } from '../services/profile';
 import { theme } from '../ui/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Feed'>;
@@ -37,9 +42,11 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState('');
+  const [answerImage, setAnswerImage] = useState<string | null>(null);
   const [showAnswersForQuestion, setShowAnswersForQuestion] = useState<string | null>(null);
   const [answersMap, setAnswersMap] = useState<Record<string, Answer[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [userProfile, setUserProfile] = useState<AppProfile | null>(null);
   
   // Refs to maintain focus
   const answerInputRef = useRef<TextInput>(null);
@@ -47,7 +54,46 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     loadQuestions();
+    loadUserProfile();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadUserProfile();
+    }
+  }, [user]);
+
+  // Refresh profile when screen comes into focus (e.g., returning from ProfileScreen)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUserProfile();
+    }, [])
+  );
+
+  const loadUserProfile = async () => {
+    try {
+      console.log('🔄 FeedScreen: Loading user profile for quick composer...');
+      
+      // Load profile from database to get base64 photo
+      const profile = await loadProfile();
+      setUserProfile(profile);
+      
+      console.log('Profile data loaded for quick composer:', {
+        hasProfile: !!profile,
+        hasPhotoURL: !!profile?.photoURL,
+        photoType: profile?.photoURL?.startsWith('data:image/') ? 'base64' : 'other',
+        displayName: profile?.displayName
+      });
+      
+      if (profile?.photoURL) {
+        console.log('📸 Profile has photo URL for quick composer');
+      } else {
+        console.log('👤 No profile photo for quick composer, will show initials');
+      }
+    } catch (error) {
+      console.error('❌ Failed to load profile for quick composer:', error);
+    }
+  };
 
   const loadQuestions = async () => {
     try {
@@ -66,6 +112,7 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     setRefreshing(true);
     try {
       await loadQuestions();
+      loadUserProfile(); // Check Firebase user data
     } finally {
       setRefreshing(false);
     }
@@ -74,6 +121,121 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   // Optimized text change handlers to prevent re-render issues
   const handleAnswerTextChange = (text: string) => {
     setAnswerText(text);
+  };
+
+  const pickAnswerImage = async () => {
+    try {
+      console.log('🔄 Starting image picker for platform:', Platform.OS);
+      
+      if (Platform.OS === 'web') {
+        // Web implementation using HTML file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        
+        return new Promise<void>((resolve, reject) => {
+          input.onchange = async (event: any) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              try {
+                console.log('🔄 Converting web image to base64...');
+                
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  if (typeof reader.result === 'string') {
+                    console.log('✅ Web image base64 conversion successful');
+                    setAnswerImage(reader.result);
+                    console.log('📎 Web answer image attached:', reader.result.substring(0, 50) + '...');
+                    resolve();
+                  } else {
+                    reject(new Error('Failed to convert to base64'));
+                  }
+                };
+                reader.onerror = () => reject(new Error('FileReader error'));
+                reader.readAsDataURL(file);
+              } catch (e: any) {
+                console.error('❌ Web image conversion failed:', e);
+                Alert.alert('Upload failed', e?.message ?? 'Could not process image');
+                reject(e);
+              }
+            } else {
+              resolve(); // User canceled
+            }
+          };
+          
+          input.oncancel = () => resolve(); // User canceled
+          input.click();
+        });
+      } else {
+        // Mobile implementation using expo-image-picker
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          return Alert.alert('Permission required', 'Please allow photo library access.');
+        }
+
+        const res = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.8,
+          allowsEditing: true,
+        });
+
+        if (!res.canceled && res.assets?.[0]?.uri) {
+          console.log('🔄 Converting mobile image to base64...');
+          
+          console.log('📱 Mobile image URI:', res.assets[0].uri);
+        
+          let base64Url: string;
+        
+          if (res.assets[0].uri.startsWith('data:')) {
+            // Already base64
+            base64Url = res.assets[0].uri;
+            console.log('✅ Image already in base64 format');
+          } else {
+            // Convert to base64
+            try {
+              const response = await fetch(res.assets[0].uri);
+              if (!response.ok) {
+                throw new Error(`Fetch failed: ${response.status}`);
+              }
+              const blob = await response.blob();
+              console.log('📦 Blob created, size:', blob.size, 'type:', blob.type);
+            
+              base64Url = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
+                    console.log('✅ Mobile image base64 conversion successful, length:', reader.result.length);
+                    resolve(reader.result);
+                  } else {
+                    console.error('❌ FileReader result is not a valid data URL:', typeof reader.result, reader.result?.toString().substring(0, 50));
+                    reject(new Error('Failed to convert to base64 - invalid result'));
+                  }
+                };
+                reader.onerror = (error) => {
+                  console.error('❌ FileReader error:', error);
+                  reject(new Error('FileReader error'));
+                };
+                reader.readAsDataURL(blob);
+              });
+            } catch (fetchError) {
+              console.error('❌ Fetch or conversion error:', fetchError);
+              throw new Error(`Image conversion failed: ${fetchError}`);
+            }
+          }
+          
+          setAnswerImage(base64Url);
+          console.log('📎 Mobile answer image attached:', base64Url.substring(0, 50) + '...');
+        }
+      }
+    } catch (e: any) {
+      console.error('❌ Answer image conversion failed:', e);
+      Alert.alert('Upload failed', e?.message ?? 'Could not process image');
+    }
+  };
+
+  const removeAnswerImage = () => {
+    setAnswerImage(null);
+    console.log('🗑️ Answer image removed');
   };
 
   const onFollow = async (id: string) => {
@@ -109,8 +271,8 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   const handleSubmitAnswer = async (questionId: string) => {
     const text = answerText.trim();
     
-    if (!text) {
-      Alert.alert('Empty answer', 'Please enter your answer');
+    if (!text && !answerImage) {
+      Alert.alert('Empty answer', 'Please enter your answer or attach an image');
       return;
     }
     
@@ -121,12 +283,17 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
     
     try {
-      console.log('Submitting answer:', { questionId, answerText: text.substring(0, 50) });
-      await addAnswer(questionId, text);
+      console.log('Submitting answer:', { 
+        questionId, 
+        answerText: text.substring(0, 50),
+        hasImage: !!answerImage
+      });
+      await addAnswer(questionId, text || 'Image attachment', answerImage || undefined);
       console.log('Answer submitted successfully');
       Alert.alert('Success', 'Your answer has been posted!');
       // Only clear text and collapse after successful submission
       setAnswerText('');
+      setAnswerImage(null);
       setExpandedQuestionId(null);
       // Reload answers for this question
       await loadAnswersForQuestion(questionId);
@@ -163,11 +330,39 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
       {/* Post Header */}
       <View style={styles.postHeader}>
         <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {item.author?.name?.charAt(0).toUpperCase() || 'U'}
-            </Text>
-          </View>
+          {(() => {
+            console.log('🔍 Post author data:', {
+              authorName: item.author?.name,
+              hasPhotoURL: !!item.author?.photoURL,
+              photoURL: item.author?.photoURL ? item.author.photoURL.substring(0, 50) + '...' : 'No photo URL'
+            });
+            // Accept base64 images and filter out old MinIO URLs
+            const isValidPhotoURL = item.author?.photoURL && (
+              item.author.photoURL.startsWith('data:image/') || // Base64 images
+              (!item.author.photoURL.includes('192.168.1.9:9000') && 
+               !item.author.photoURL.includes('test-bucket')) // Filter out old MinIO URLs
+            );
+            
+            return isValidPhotoURL ? (
+              <Image 
+                source={{ uri: item.author.photoURL }} 
+                style={styles.profileImage}
+                onLoad={() => {
+                  console.log('✅ Post author image loaded successfully');
+                }}
+                onError={(e) => {
+                  console.log('❌ Post author image load error:', e.nativeEvent.error);
+                  console.log('📷 Failed author URL:', item.author.photoURL);
+                }}
+              />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {item.author?.name?.charAt(0).toUpperCase() || 'U'}
+                </Text>
+              </View>
+            );
+          })()}
         </View>
         <View style={styles.postHeaderInfo}>
           <Text style={styles.authorName}>{item.author?.name || 'Anonymous'}</Text>
@@ -187,7 +382,27 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
 
       {/* Post Content */}
       <View style={styles.postContent}>
+        {/* Question Images - Moved to top */}
+        {item.images && item.images.length > 0 && (
+          <View style={styles.questionImagesContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imagesScroll}>
+              {item.images.map((imageUrl, index) => {
+                const isValidImage = imageUrl && imageUrl.startsWith('data:image/');
+                return isValidImage ? (
+                  <Image 
+                    key={index}
+                    source={{ uri: imageUrl }} 
+                    style={styles.questionImage}
+                    resizeMode="cover"
+                  />
+                ) : null;
+              })}
+            </ScrollView>
+          </View>
+        )}
+
         <Text style={styles.postTitle}>{item.title}</Text>
+        
         {item.topic && (
           <View style={styles.tagsContainer}>
             <View style={styles.tag}>
@@ -237,9 +452,25 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
           <Ionicons name="chatbubble-outline" size={20} color={theme.colors.subtext} />
           <Text style={styles.actionText}>Answer</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            Alert.alert('Share', 'Share functionality coming soon!');
+          }}
+        >
           <Ionicons name="share-outline" size={20} color={theme.colors.subtext} />
           <Text style={styles.actionText}>Share</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            Alert.alert('Bookmark', 'Post bookmarked!');
+          }}
+        >
+          <Ionicons name="bookmark-outline" size={20} color={theme.colors.subtext} />
+          <Text style={styles.actionText}>Save</Text>
         </TouchableOpacity>
       </View>
 
@@ -251,7 +482,13 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
               {answersMap[item.id].length} {answersMap[item.id].length === 1 ? 'Answer' : 'Answers'}
             </Text>
           </View>
-          {answersMap[item.id].map((answer) => (
+          {answersMap[item.id].map((answer) => {
+            console.log('🔍 Rendering answer:', {
+              id: answer.id,
+              hasImageUrl: !!answer.imageUrl,
+              imageUrl: answer.imageUrl ? answer.imageUrl.substring(0, 30) + '...' : 'No image'
+            });
+            return (
             <View key={answer.id} style={styles.answerItem}>
               <View style={styles.answerItemHeader}>
                 <View style={styles.answerItemAvatar}>
@@ -272,14 +509,49 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
                 </View>
               </View>
               <Text style={styles.answerItemBody}>{answer.body}</Text>
+              {(() => {
+                console.log('🔍 Answer image data:', {
+                  answerId: answer.id,
+                  hasImageUrl: !!answer.imageUrl,
+                  imageType: answer.imageUrl?.startsWith('data:image/') ? 'base64' : 
+                           answer.imageUrl?.startsWith('blob:') ? 'blob' : 'other',
+                  imageUrl: answer.imageUrl ? answer.imageUrl.substring(0, 50) + '...' : 'No image',
+                  fullUrl: answer.imageUrl
+                });
+                
+                // Handle different image URL types
+                const isBase64Image = answer.imageUrl && answer.imageUrl.startsWith('data:image/');
+                const isBlobUrl = answer.imageUrl && answer.imageUrl.startsWith('blob:');
+                
+                if (isBlobUrl) {
+                  console.log('⚠️ Found blob URL, this will likely fail to load:', answer.imageUrl);
+                }
+                
+                const isValidImageUrl = isBase64Image;
+                
+                return isValidImageUrl ? (
+                  <View style={styles.answerImageContainer}>
+                    <Image 
+                      source={{ uri: answer.imageUrl }} 
+                      style={styles.answerImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : null;
+              })()}
             </View>
-          ))}
+            );
+          })}
         </View>
       )}
 
       {/* Inline Answer Box */}
       {expandedQuestionId === item.id && (
         <View style={styles.answerBox}>
+          {(() => {
+            console.log('🔧 Answer box rendering for question:', item.id);
+            return null;
+          })()}
           <View style={styles.answerHeader}>
             <View style={styles.answerAvatar}>
               <Text style={styles.answerAvatarText}>
@@ -311,12 +583,46 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             clearTextOnFocus={false}
             enablesReturnKeyAutomatically={false}
           />
+          
+          {/* Image Attachment Preview */}
+          {answerImage && (
+            <View style={styles.imagePreviewContainer}>
+              <Image 
+                source={{ uri: answerImage }} 
+                style={styles.imagePreview}
+                resizeMode="cover"
+              />
+              <TouchableOpacity 
+                style={styles.removeImageButton}
+                onPress={removeAnswerImage}
+              >
+                <Ionicons name="close-circle" size={24} color="#FF4444" />
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          {/* Attachment Actions */}
+          <View style={styles.attachmentActions}>
+            <Text style={styles.imageDebugText}>🔧 Debug: Attachment section rendering</Text>
+            <TouchableOpacity
+              style={styles.attachButton}
+              onPress={() => {
+                console.log('🔧 Add Image button pressed!');
+                pickAnswerImage();
+              }}
+            >
+              <Ionicons name="image" size={20} color={theme.colors.primary} />
+              <Text style={styles.attachButtonText}>Add Image</Text>
+            </TouchableOpacity>
+          </View>
+          
           <View style={styles.answerActions}>
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => {
                 setExpandedQuestionId(null);
                 setAnswerText('');
+                setAnswerImage(null);
               }}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -324,10 +630,10 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               style={[
                 styles.submitAnswerButton,
-                (!answerText || !answerText.trim()) && styles.submitAnswerButtonDisabled
+                (!answerText?.trim() && !answerImage) && styles.submitAnswerButtonDisabled
               ]}
               onPress={() => handleSubmitAnswer(item.id)}
-              disabled={!answerText || !answerText.trim()}
+              disabled={!answerText?.trim() && !answerImage}
               activeOpacity={0.7}
             >
               <Text style={[
@@ -348,11 +654,44 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
         style={styles.quickComposer}
         onPress={() => navigation.navigate('Compose', { mode: 'question' })}
       >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.displayName?.charAt(0).toUpperCase() || 'U'}
-          </Text>
-        </View>
+        {(() => {
+          console.log('🔍 Quick composer profile data:', {
+            hasUserProfile: !!userProfile,
+            hasPhotoURL: !!userProfile?.photoURL,
+            photoType: userProfile?.photoURL?.startsWith('data:image/') ? 'base64' : 'other',
+            displayName: userProfile?.displayName
+          });
+          
+          // Use base64 profile photo from database
+          const isValidPhotoURL = userProfile?.photoURL && 
+            userProfile.photoURL.startsWith('data:image/');
+          
+          return isValidPhotoURL ? (
+            <Image 
+              source={{ uri: userProfile.photoURL }} 
+              style={styles.profileImage}
+              onLoad={() => {
+                console.log('✅ Quick composer profile image loaded successfully');
+              }}
+              onError={(e) => {
+                console.log('❌ Quick composer profile image load error:', e.nativeEvent.error);
+                console.log('📷 Failed quick composer URL:', userProfile.photoURL);
+              }}
+            />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {(() => {
+                  const initials = userProfile?.displayName?.charAt(0).toUpperCase() ||
+                                 user?.displayName?.charAt(0).toUpperCase() || 
+                                 user?.email?.charAt(0).toUpperCase() || 'U';
+                  console.log('👤 Quick composer showing initials:', initials, 'Has profile photo:', !!userProfile?.photoURL);
+                  return initials;
+                })()}
+              </Text>
+            </View>
+          );
+        })()}
         <Text style={styles.quickComposerText}>Ask a question...</Text>
         <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
       </TouchableOpacity>
@@ -368,8 +707,25 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Community</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Community</Text>
+        </View>
         <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => {
+              console.log('🔄 Manual refresh triggered');
+              loadUserProfile();
+            }}
+          >
+            <Ionicons name="refresh" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.headerButton}>
             <Ionicons name="search" size={24} color={theme.colors.text} />
           </TouchableOpacity>
@@ -441,6 +797,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 24,
@@ -528,6 +895,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   avatarText: {
     fontSize: 18,
@@ -750,6 +1122,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text,
     lineHeight: 20,
+  },
+  answerImage: {
+    width: '100%',
+    height: Platform.OS === 'web' ? 400 : 250,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  imagePreview: {
+    width: '100%',
+    height: Platform.OS === 'web' ? 250 : 150,
+    borderRadius: 8,
+    backgroundColor: theme.colors.border,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+  },
+  attachmentActions: {
+    flexDirection: 'row',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: theme.colors.border,
+    gap: 6,
+  },
+  attachButtonText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '500',
+  },
+  answerImageContainer: {
+    marginTop: 8,
+  },
+  imageDebugText: {
+    fontSize: 12,
+    color: theme.colors.subtext,
+    marginBottom: 4,
+    fontStyle: 'italic',
+  },
+  questionImagesContainer: {
+    marginTop: 0,
+    marginBottom: 12,
+  },
+  imagesScroll: {
+    flexDirection: 'row',
+  },
+  questionImage: {
+    width: Platform.OS === 'web' ? 300 : 150,
+    height: Platform.OS === 'web' ? 300 : 150,
+    borderRadius: 12,
+    marginRight: 12,
+    backgroundColor: theme.colors.border,
   },
   // Loading state
   loadingContainer: {
