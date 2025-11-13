@@ -1,7 +1,7 @@
 import { auth, db } from '../firebase/app';
 import { updateProfile } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { uploadAvatar } from './minioStorage';
+import { uploadImageOffline } from './offlineImageStorage';
 
 export type AppProfile = {
   displayName: string;
@@ -25,10 +25,22 @@ export async function loadProfile(): Promise<AppProfile | null> {
   const u = auth?.currentUser;
   if (!u) return null;
   try {
+    console.log('🔄 Loading profile from Firestore...', u.uid);
     const snap = await getDoc(doc(db!, 'users', u.uid));
-    if (snap.exists()) return (snap.data() as AppProfile) || null;
-  } catch {}
-  // Fallback from auth
+    if (snap.exists()) {
+      const profile = snap.data() as AppProfile;
+      console.log('✅ Profile loaded from Firestore:', {
+        hasPhotoURL: !!profile.photoURL,
+        photoURLLength: profile.photoURL?.length,
+        isBase64: profile.photoURL?.startsWith('data:image/')
+      });
+      return profile || null;
+    }
+  } catch (e) {
+    console.error('❌ Failed to load from Firestore:', e);
+  }
+  // Fallback from auth (won't have base64 photoURL)
+  console.log('🔄 Falling back to Firebase Auth profile...');
   return { displayName: u.displayName || 'Member', photoURL: u.photoURL || undefined };
 }
 
@@ -48,10 +60,22 @@ export async function loadUserProfile(userId: string): Promise<AppProfile | null
 export async function saveProfile(p: AppProfile): Promise<void> {
   const u = auth?.currentUser;
   if (!u) throw new Error('Not signed in');
-  // Update Firebase Auth profile (displayName + optional photoURL)
+  
+  console.log('🔄 Saving profile...', {
+    uid: u.uid,
+    displayName: p.displayName,
+    hasPhotoURL: !!p.photoURL,
+    photoURLLength: p.photoURL?.length
+  });
+  
+  // Update Firebase Auth profile (displayName only - photoURL stored in Firestore due to length limits)
   const authUpdate1: { displayName: string; photoURL?: string } = { displayName: p.displayName };
-  if (p.photoURL) authUpdate1.photoURL = p.photoURL;
+  // Skip photoURL for Firebase Auth if it's base64 (too long)
+  if (p.photoURL && !p.photoURL.startsWith('data:image/')) {
+    authUpdate1.photoURL = p.photoURL;
+  }
   await updateProfile(u, authUpdate1);
+  console.log('✅ Firebase Auth profile updated (photoURL stored in Firestore)');
   
   // Force refresh the auth token to reflect profile changes
   try {
@@ -61,35 +85,45 @@ export async function saveProfile(p: AppProfile): Promise<void> {
   }
   
   // Persist in Firestore with all fields
+  const firestoreData = {
+    displayName: p.displayName,
+    ...(p.photoURL ? { photoURL: p.photoURL } : {}),
+    ...(p.cancerType ? { cancerType: p.cancerType } : {}),
+    ...(p.stage ? { stage: p.stage } : {}),
+    ...(typeof p.age === 'number' ? { age: p.age } : {}),
+    ...(typeof p.onboardingComplete === 'boolean' ? { onboardingComplete: p.onboardingComplete } : {}),
+    ...(typeof p.diagnosed === 'boolean' ? { diagnosed: p.diagnosed } : {}),
+    ...(p.gender ? { gender: p.gender } : {}),
+    ...(p.role ? { role: p.role } : {}),
+    ...(p.country ? { country: p.country } : {}),
+    ...(typeof p.inTreatment === 'boolean' ? { inTreatment: p.inTreatment } : {}),
+    ...(p.treatmentTypes && p.treatmentTypes.length ? { treatmentTypes: p.treatmentTypes } : {}),
+    ...(typeof p.diagnosisYear === 'number' ? { diagnosisYear: p.diagnosisYear } : {}),
+    ...(p.interests && p.interests.length ? { interests: p.interests } : {}),
+    ...(typeof p.allowMessages === 'boolean' ? { allowMessages: p.allowMessages } : {}),
+  };
+  
+  console.log('🔄 Saving to Firestore...', firestoreData);
   await setDoc(
     doc(db!, 'users', u.uid),
-    {
-      displayName: p.displayName,
-      ...(p.photoURL ? { photoURL: p.photoURL } : {}),
-      ...(p.cancerType ? { cancerType: p.cancerType } : {}),
-      ...(p.stage ? { stage: p.stage } : {}),
-      ...(typeof p.age === 'number' ? { age: p.age } : {}),
-      ...(typeof p.onboardingComplete === 'boolean' ? { onboardingComplete: p.onboardingComplete } : {}),
-      ...(typeof p.diagnosed === 'boolean' ? { diagnosed: p.diagnosed } : {}),
-      ...(p.gender ? { gender: p.gender } : {}),
-      ...(p.role ? { role: p.role } : {}),
-      ...(p.country ? { country: p.country } : {}),
-      ...(typeof p.inTreatment === 'boolean' ? { inTreatment: p.inTreatment } : {}),
-      ...(p.treatmentTypes && p.treatmentTypes.length ? { treatmentTypes: p.treatmentTypes } : {}),
-      ...(typeof p.diagnosisYear === 'number' ? { diagnosisYear: p.diagnosisYear } : {}),
-      ...(p.interests && p.interests.length ? { interests: p.interests } : {}),
-      ...(typeof p.allowMessages === 'boolean' ? { allowMessages: p.allowMessages } : {}),
-    },
+    firestoreData,
     { merge: true }
   );
+  console.log('✅ Profile saved to Firestore successfully');
 }
 
 export async function uploadAvatarAsync(uri: string): Promise<string> {
   const u = auth?.currentUser;
   if (!u) throw new Error('Not signed in');
-  // Upload to MinIO storage
-  const url = await uploadAvatar(uri, u.uid);
-  return url;
+  
+  console.log('🔄 Uploading avatar using offline storage (no server calls)...', uri);
+  
+  // Upload using completely offline method (no network calls)
+  const filename = `avatar-${u.uid}-${Date.now()}.jpg`;
+  const result = await uploadImageOffline(uri, 'avatars', filename);
+  
+  console.log('✅ Avatar upload successful (offline):', result.success);
+  return result.url;
 }
 
 export async function saveOnboardingProfile(p: Required<Pick<AppProfile, 'displayName'>> & {

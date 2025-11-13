@@ -14,8 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadImage } from '../services/minioStorage';
-import { geminiAI } from '../services/geminiAI';
+import { uploadImageOffline } from '../services/offlineImageStorage';
+import { geminiMultiKey as geminiAI } from '../services/geminiMultiKey';
 import { theme } from '../ui/theme';
 import Markdown from 'react-native-markdown-display';
 
@@ -74,7 +74,8 @@ const FoodScanScreen: React.FC<Props> = ({ navigation }) => {
       // Upload image first
       setIsUploading(true);
       const filename = `food-${Date.now()}.jpg`;
-      const imageUrl = await uploadImage(selectedImage, 'food-scans', filename);
+      const result = await uploadImageOffline(selectedImage, 'food-scans', filename);
+      const imageUrl = result.url;
       setUploadedImageUrl(imageUrl);
       setIsUploading(false);
 

@@ -92,7 +92,15 @@ export const addQuestion = async (title: string): Promise<Question> => {
 };
 
 export const addAnswer = async (questionId: string, body: string): Promise<Answer> => {
+  console.log('addAnswer called:', { questionId, bodyLength: body.length });
+  
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
   const author = currentUser();
+  console.log('Current user:', { id: author.id, name: author.name });
+  
   // Enrich with public illness profile if available
   try {
     if (author.id !== 'anon') {
@@ -105,7 +113,10 @@ export const addAnswer = async (questionId: string, body: string): Promise<Answe
         if (typeof d.age === 'number') (author as any).age = d.age;
       }
     }
-  } catch {}
+  } catch (profileError) {
+    console.warn('Could not fetch user profile:', profileError);
+  }
+  
   const data = {
     questionId,
     author,
@@ -113,9 +124,15 @@ export const addAnswer = async (questionId: string, body: string): Promise<Answe
     upvotes: 0,
     createdAt: serverTimestamp(),
   };
+  
+  console.log('Adding answer to Firestore:', data);
   const ref = await addDoc(aCol(), data as any);
+  console.log('Answer added with ID:', ref.id);
+  
   // increment answersCount on question
   await updateDoc(doc(db!, 'questions', questionId), { answersCount: increment(1) });
+  console.log('Question answer count incremented');
+  
   return { id: ref.id, ...(data as any) } as Answer;
 };
 

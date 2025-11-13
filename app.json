@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "LifeWeaver",
-    "slug": "lifeweaver",
+    "name": "VitalPath",
+    "slug": "vitalpath",
     "version": "1.0.0",
-    "scheme": "lifeweaver",
+    "scheme": "vitalpath",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +22,16 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.vitalpath.cancerapp",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -30,6 +39,11 @@
     "plugins": [
       "expo-web-browser",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8d03d88d-fc4f-41d8-ad3f-7897e2d364ae"
+      }
+    }
   }
 }

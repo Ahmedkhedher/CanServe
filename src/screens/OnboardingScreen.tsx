@@ -87,9 +87,12 @@ const OnboardingScreen: React.FC<any> = ({ navigation }) => {
     if (!res.canceled && res.assets?.[0]?.uri) {
       try {
         setSaving(true);
+        console.log('🔄 Uploading profile picture in onboarding...');
         const url = await uploadAvatarAsync(res.assets[0].uri);
+        console.log('✅ Profile picture uploaded in onboarding:', url.substring(0, 50) + '...');
         setPhotoURL(url);
       } catch (e: any) {
+        console.error('❌ Onboarding profile picture upload failed:', e);
         Alert.alert('Upload failed', e?.message ?? 'Could not upload image');
       } finally {
         setSaving(false);

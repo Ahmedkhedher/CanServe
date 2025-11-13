@@ -166,10 +166,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Google OAuth request using Expo provider
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '1028348652431-etvin8g5sdmq335qei2u37esu4hemebi.apps.googleusercontent.com',
-    iosClientId: 'YOUR_IOS_GOOGLE_CLIENT_ID',
-    androidClientId: 'YOUR_ANDROID_GOOGLE_CLIENT_ID',
-    scopes: ['profile', 'email'],
+    webClientId: '1028348652431-etvin8g5sdmq335qei2u37esu4hemebi.apps.googleusercontent.com',
+    // Android requires androidClientId - using web client ID for now
+    androidClientId: '1028348652431-etvin8g5sdmq335qei2u37esu4hemebi.apps.googleusercontent.com',
+    // For iOS production builds:
+    // iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
   });
 
   useReactEffect(() => {
@@ -177,24 +178,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!auth || !isConfigured) return;
       if (!response) return;
       console.log('[Auth] Google response:', response);
+      
       if (response.type === 'success') {
-        const accessToken = response.authentication?.accessToken;
-        if (accessToken) {
+        const { accessToken, idToken } = response.authentication || {};
+        
+        if (idToken) {
           try {
-            const credential = GoogleAuthProvider.credential(undefined, accessToken);
-            await signInWithCredential(auth, credential);
-            console.log('[Auth] Google sign-in success');
+            console.log('[Auth] Creating Google credential...');
+            const credential = GoogleAuthProvider.credential(idToken, accessToken);
+            const result = await signInWithCredential(auth, credential);
+            console.log('[Auth] Google sign-in success!', result.user.email);
+            
+            // Check if new user and seed profile
+            const creationTime = result.user.metadata.creationTime;
+            const lastSignInTime = result.user.metadata.lastSignInTime;
+            const isNewUser = creationTime === lastSignInTime;
+            
+            console.log('[Auth] Google user metadata:', { creationTime, lastSignInTime, isNewUser });
+            
+            if (isNewUser) {
+              console.log('[Auth] New Google user - seeding profile');
+              setOnboardingNeeded(true);
+              
+              try {
+                const userDoc = doc(db!, 'users', result.user.uid);
+                const { setDoc } = await import('firebase/firestore');
+                await setDoc(
+                  userDoc,
+                  {
+                    onboardingComplete: false,
+                    createdAt: new Date().toISOString(),
+                    email: result.user.email,
+                    displayName: result.user.displayName,
+                    photoURL: result.user.photoURL,
+                  },
+                  { merge: true }
+                );
+                console.log('[Auth] Google user profile seeded');
+              } catch (e) {
+                console.warn('[Auth] Failed to seed Google user profile', e);
+              }
+            }
           } catch (e) {
-            console.error('[Auth] signInWithCredential error', e);
+            console.error('[Auth] Google sign-in credential error:', e);
             Alert.alert('Google sign-in failed', (e as any)?.message ?? 'Unknown error');
           }
         } else {
-          console.warn('[Auth] No access token in Google response');
-          Alert.alert('Google sign-in failed', 'No access token returned.');
+          console.warn('[Auth] No ID token in Google response');
+          Alert.alert('Google sign-in failed', 'No ID token returned.');
         }
       } else if (response.type === 'error') {
-        console.error('[Auth] Google response error', (response as any).error);
-        Alert.alert('Google sign-in failed', 'Response type error.');
+        console.error('[Auth] Google response error:', (response as any).error);
+        Alert.alert('Google sign-in failed', 'Please try again.');
+      } else if (response.type === 'cancel') {
+        console.log('[Auth] Google sign-in cancelled by user');
       }
     };
     run();
@@ -207,10 +244,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return Alert.alert('Google sign-in not ready', 'Please wait a second and try again.');
     }
     try {
-      const result = await promptAsync({ useProxy: true, showInRecents: true });
-      console.log('[Auth] promptAsync result:', result);
+      console.log('[Auth] Starting Google sign-in...');
+      const result = await promptAsync();
+      console.log('[Auth] Google sign-in result:', result);
     } catch (e) {
-      console.error('[Auth] promptAsync threw', e);
+      console.error('[Auth] Google sign-in error:', e);
       Alert.alert('Google sign-in failed', (e as any)?.message ?? 'Unknown error');
     }
   };

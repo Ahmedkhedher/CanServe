@@ -5,7 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // ⚠️ SECURITY WARNING: Your API key is visible in the code!
 // For production, use environment variables.
 // Get your free API key at: https://makersuite.google.com/app/apikey
-const GEMINI_API_KEY = 'AIzaSyAQrXYke4ORHRG32Jy_zHUUAsKjL-cGlBc'; // Replace with your Gemini API key
+const GEMINI_API_KEY = 'AIzaSyBAdLsY1Gd5wzoAbf0p2NBcoJ8SZNpXb2M'; // Replace with your Gemini API key
 
 export interface FoodAnalysisData {
   foodName: string;

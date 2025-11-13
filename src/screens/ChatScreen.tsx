@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,21 +13,23 @@ import {
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { geminiAI, ChatMessage, generateMessageId } from '../services/geminiAI';
+import { geminiMultiKey as geminiAI, ChatMessage, generateMessageId } from '../services/geminiMultiKey';
 import { useAuth } from '../context/AuthContext';
 import { loadProfile } from '../services/profile';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadImage } from '../services/minioStorage';
+import { uploadImageOffline, getOfflineUploadMessage } from '../services/offlineImageStorage';
 import Markdown from 'react-native-markdown-display';
 import { theme } from '../ui/theme';
+import { scaleFontSize, scaleSpacing, isSmallPhone } from '../ui/responsive';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
-// Message Bubble Component
-const MessageBubble: React.FC<{ item: ChatMessage }> = ({ item }) => {
+// Message Bubble Component - Memoized to prevent unnecessary re-renders
+const MessageBubble: React.FC<{ item: ChatMessage }> = React.memo(({ item }) => {
   const isUser = item.role === 'user';
 
   return (
@@ -74,10 +76,11 @@ const MessageBubble: React.FC<{ item: ChatMessage }> = ({ item }) => {
       )}
     </View>
   );
-};
+});
 
 const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [userProfile, setUserProfile] = useState<{
     cancerType?: string;
     stage?: string;
@@ -122,25 +125,45 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
     }, 100);
   };
 
+  // Optimized text change handler to prevent re-render issues
+  const handleTextChange = useCallback((text: string) => {
+    setInputText(text);
+  }, []);
+
   const pickImage = async () => {
     try {
+      console.log('📷 Starting image picker...');
+      
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      console.log('📋 Permission status:', perm.status);
+      
       if (perm.status !== 'granted') {
-        return Alert.alert('Permission required', 'Please allow photo library access.');
+        console.log('❌ Permission denied');
+        return Alert.alert('Permission required', 'Please allow photo library access to upload images.');
       }
 
+      console.log('📷 Launching image library...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.8,
         allowsEditing: true,
       });
 
+      console.log('📷 Image picker result:', {
+        canceled: result.canceled,
+        hasAssets: !!result.assets,
+        assetsLength: result.assets?.length
+      });
+
       if (!result.canceled && result.assets?.[0]?.uri) {
+        console.log('✅ Image selected:', result.assets[0].uri);
         setSelectedImage(result.assets[0].uri);
+      } else {
+        console.log('📷 No image selected or picker canceled');
       }
     } catch (error: any) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to pick image');
+      console.error('❌ Image picker error:', error);
+      Alert.alert('Error', `Failed to pick image: ${error.message}`);
     }
   };
 
@@ -153,12 +176,28 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
     // Upload image if selected
     if (selectedImage) {
       try {
+        console.log('⬆️ Starting image upload...', selectedImage);
         setIsUploading(true);
         const filename = `chat-${Date.now()}.jpg`;
-        imageUrl = await uploadImage(selectedImage, 'chat', filename);
+        
+        console.log('⬆️ Calling uploadImageOffline...', { selectedImage, filename });
+        const result = await uploadImageOffline(selectedImage, 'chat', filename);
+        
+        imageUrl = result.url;
+        console.log('✅ Upload successful (offline):', {
+          method: result.method,
+          urlLength: result.url.length,
+          success: result.success,
+          message: getOfflineUploadMessage(result)
+        });
       } catch (error: any) {
-        console.error('Image upload error:', error);
-        Alert.alert('Upload failed', error?.message || 'Could not upload image');
+        console.error('❌ Image upload error:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+        Alert.alert('Upload failed', `Could not upload image: ${error?.message || 'Unknown error'}`);
         setIsUploading(false);
         return;
       } finally {
@@ -225,7 +264,7 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -248,7 +287,8 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        enabled={true}
       >
         {/* Messages */}
         <FlatList
@@ -273,7 +313,7 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
         )}
 
         {/* Input Area */}
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 4) }]}>
           {/* Image Preview */}
           {selectedImage && (
             <View style={styles.imagePreviewContainer}>
@@ -315,10 +355,19 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
               placeholder="Message..."
               placeholderTextColor={theme.colors.subtext}
               value={inputText}
-              onChangeText={setInputText}
+              onChangeText={handleTextChange}
               multiline
               maxLength={500}
               editable={!isLoading && !isUploading}
+              textAlignVertical="top"
+              returnKeyType="default"
+              blurOnSubmit={false}
+              autoCorrect={true}
+              autoCapitalize="sentences"
+              keyboardType="default"
+              scrollEnabled={true}
+              selectTextOnFocus={false}
+              clearTextOnFocus={false}
             />
 
             {/* Send Button */}
@@ -336,7 +385,7 @@ const ChatScreenNew: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -350,8 +399,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 12,
+    paddingTop: Platform.OS === 'ios' ? 44 : 24,
+    paddingBottom: 8,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -389,12 +438,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContainer: {
-    padding: 16,
-    paddingBottom: 20,
+    padding: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexGrow: 1,
   },
   messageContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 12,
     alignItems: 'flex-end',
   },
   userMessageContainer: {
@@ -404,27 +455,27 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   aiAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: isSmallPhone ? 28 : 32,
+    height: isSmallPhone ? 28 : 32,
+    borderRadius: isSmallPhone ? 14 : 16,
     backgroundColor: theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: scaleSpacing(1),
   },
   userAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: isSmallPhone ? 28 : 32,
+    height: isSmallPhone ? 28 : 32,
+    borderRadius: isSmallPhone ? 14 : 16,
     backgroundColor: theme.colors.subtext,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: scaleSpacing(1),
   },
   messageBubble: {
-    maxWidth: '70%',
-    padding: 12,
-    borderRadius: 18,
+    maxWidth: '75%',
+    padding: 10,
+    borderRadius: 16,
   },
   userBubble: {
     backgroundColor: theme.colors.primary,
@@ -437,8 +488,8 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   userText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: scaleFontSize(15),
+    lineHeight: scaleFontSize(20),
     color: '#FFFFFF',
   },
   timestamp: {
@@ -457,8 +508,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   loadingContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
   },
   typingIndicator: {
     flexDirection: 'row',
@@ -487,9 +538,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    minHeight: Platform.OS === 'android' ? 56 : undefined,
   },
   imagePreviewContainer: {
     position: 'relative',
@@ -523,7 +574,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
   iconButton: {
     width: 40,
@@ -535,11 +586,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg,
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingHorizontal: scaleSpacing(2),
+    paddingVertical: scaleSpacing(1.25),
+    fontSize: scaleFontSize(15),
     color: theme.colors.text,
-    maxHeight: 100,
+    maxHeight: isSmallPhone ? 80 : 100,
+    minHeight: isSmallPhone ? 36 : 40,
   },
   sendButton: {
     width: 40,

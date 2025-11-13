@@ -31,13 +31,25 @@ const ProfileScreenNew: React.FC<any> = ({ navigation }) => {
   }, []);
 
   const loadUserProfile = async () => {
+    console.log('🔄 Loading user profile...');
     const p = await loadProfile();
     if (p) {
+      console.log('✅ Profile loaded:', {
+        displayName: p.displayName,
+        hasPhotoURL: !!p.photoURL,
+        photoURLLength: p.photoURL?.length,
+        cancerType: p.cancerType,
+        stage: p.stage,
+        age: p.age
+      });
+      
       setDisplayName(p.displayName || 'Member');
       setPhotoURL(p.photoURL);
       if (p.cancerType) setCancerType(p.cancerType);
       if (p.stage) setStage(p.stage);
       if (typeof p.age === 'number') setAge(String(p.age));
+    } else {
+      console.log('❌ No profile found');
     }
   };
 
@@ -55,10 +67,33 @@ const ProfileScreenNew: React.FC<any> = ({ navigation }) => {
     if (!res.canceled && res.assets?.[0]?.uri) {
       try {
         setSaving(true);
+        console.log('🔄 Uploading and saving profile picture...');
+        
+        // Upload the image
         const url = await uploadAvatarAsync(res.assets[0].uri);
+        console.log('✅ Image uploaded, now saving to profile...', url.substring(0, 50) + '...');
+        
+        // Update local state
         setPhotoURL(url);
+        
+        // Immediately save to database
+        await saveProfile({
+          displayName: displayName.trim() || 'Member',
+          photoURL: url,
+          cancerType: cancerType.trim() || undefined,
+          stage: stage.trim() || undefined,
+          age: Number.isFinite(parseInt(age, 10)) ? parseInt(age, 10) : undefined,
+        });
+        
+        console.log('✅ Profile picture saved successfully!');
+        
+        // Reload profile to confirm it was saved
+        await loadUserProfile();
+        
+        Alert.alert('Success', 'Profile picture updated and saved!');
       } catch (e: any) {
-        Alert.alert('Upload failed', e?.message ?? 'Could not upload image');
+        console.error('❌ Profile picture save failed:', e);
+        Alert.alert('Upload failed', e?.message ?? 'Could not save profile picture');
       } finally {
         setSaving(false);
       }

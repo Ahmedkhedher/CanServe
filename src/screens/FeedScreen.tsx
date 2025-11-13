@@ -22,11 +22,12 @@ import {
   upvoteQuestionOnce,
   Question,
   Answer,
-  addQuestion,
   getAnswersFor,
+  addQuestion,
   addAnswer,
 } from '../data/store';
 import { theme } from '../ui/theme';
+import { useSubmission } from '../hooks/useSubmission';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Feed'>;
 
@@ -42,6 +43,16 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
   const [showAnswersForQuestion, setShowAnswersForQuestion] = useState<string | null>(null);
   const [answersMap, setAnswersMap] = useState<Record<string, Answer[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // New submission system
+  const {
+    submitQuestion,
+    submitAnswer,
+    isSubmitting,
+    error: submissionError,
+    validationErrors,
+    reset: resetSubmission
+  } = useSubmission();
 
   useEffect(() => {
     loadQuestions();
@@ -69,6 +80,15 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
   }, []);
 
+  // Optimized text change handlers to prevent re-render issues
+  const handleAskTextChange = useCallback((text: string) => {
+    setAskText(text);
+  }, []);
+
+  const handleAnswerTextChange = useCallback((text: string) => {
+    setAnswerText(text);
+  }, []);
+
   const onFollow = async (id: string) => {
     toggleFollow(id);
     await loadQuestions();
@@ -89,14 +109,11 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const submitQuestion = async () => {
+  const handleSubmitQuestion = async () => {
     const text = askText.trim();
-    if (!text) {
-      Alert.alert('Empty question', 'Please enter a question');
-      return;
-    }
-    if (text.length < 10) {
-      Alert.alert('Too short', 'Please write at least 10 characters');
+    
+    if (!text || text.length < 10) {
+      Alert.alert('Invalid Question', 'Please write at least 10 characters and make sure it\'s a proper question.');
       return;
     }
     
@@ -109,14 +126,16 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
           text: 'Post',
           onPress: async () => {
             try {
-              await addQuestion(text);
+              console.log('Submitting question:', text);
+              const question = await addQuestion(text);
+              console.log('Question submitted successfully:', question.id);
               setAskText('');
               setShowComposer(false);
               await loadQuestions();
-              // Show success toast-style
               Alert.alert('✅ Posted!', 'Your question is now live');
-            } catch (e: any) {
-              Alert.alert('Unable to post', e?.message || 'Try again later.');
+            } catch (error: any) {
+              console.error('Failed to submit question:', error);
+              Alert.alert('Error', error?.message || 'Failed to post question. Please try again.');
             }
           }
         },
@@ -133,16 +152,26 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const submitAnswer = async (questionId: string) => {
-    if (!answerText.trim()) {
+  const handleSubmitAnswer = async (questionId: string) => {
+    const text = answerText.trim();
+    
+    if (!text) {
       Alert.alert('Empty answer', 'Please enter your answer');
       return;
     }
+    
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to post an answer');
+      return;
+    }
+    
     try {
-      console.log('Submitting answer:', { questionId, answerText: answerText.substring(0, 50) });
-      await addAnswer(questionId, answerText);
+      console.log('Submitting answer:', { questionId, answerText: text.substring(0, 50) });
+      await addAnswer(questionId, text);
       console.log('Answer submitted successfully');
       Alert.alert('Success', 'Your answer has been posted!');
+      // Only clear text and collapse after successful submission
       setAnswerText('');
       setExpandedQuestionId(null);
       // Reload answers for this question
@@ -151,6 +180,7 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
     } catch (e: any) {
       console.error('Error submitting answer:', e);
       Alert.alert('Error', e?.message || 'Failed to post answer');
+      // Don't clear text or collapse on error so user can retry
     }
   };
 
@@ -309,12 +339,20 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             placeholder="Share your thoughts and help others..."
             placeholderTextColor={theme.colors.subtext}
             value={answerText}
-            onChangeText={setAnswerText}
+            onChangeText={handleAnswerTextChange}
             multiline
             numberOfLines={3}
             textAlignVertical="top"
             maxLength={500}
             autoFocus
+            returnKeyType="default"
+            blurOnSubmit={false}
+            autoCorrect={true}
+            autoCapitalize="sentences"
+            keyboardType="default"
+            scrollEnabled={true}
+            selectTextOnFocus={false}
+            clearTextOnFocus={false}
           />
           <Text style={styles.characterCount}>
             {answerText.length}/500
@@ -330,10 +368,18 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.submitAnswerButton}
-              onPress={() => submitAnswer(item.id)}
+              style={[
+                styles.submitAnswerButton,
+                (!answerText || !answerText.trim()) && styles.submitAnswerButtonDisabled
+              ]}
+              onPress={() => handleSubmitAnswer(item.id)}
+              disabled={!answerText || !answerText.trim()}
+              activeOpacity={0.7}
             >
-              <Text style={styles.submitAnswerButtonText}>Post Answer</Text>
+              <Text style={[
+                styles.submitAnswerButtonText,
+                (!answerText || !answerText.trim()) && styles.submitAnswerButtonTextDisabled
+              ]}>Post Answer</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -348,7 +394,11 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
         <View style={styles.composer}>
           <View style={styles.composerHeader}>
             <Text style={styles.composerTitle}>Create Post</Text>
-            <TouchableOpacity onPress={() => setShowComposer(false)}>
+            <TouchableOpacity 
+              onPress={() => setShowComposer(false)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Ionicons name="close" size={24} color={theme.colors.subtext} />
             </TouchableOpacity>
           </View>
@@ -357,21 +407,36 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
             placeholder="What's on your mind?"
             placeholderTextColor={theme.colors.subtext}
             value={askText}
-            onChangeText={setAskText}
+            onChangeText={handleAskTextChange}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
             maxLength={300}
+            autoFocus={true}
+            blurOnSubmit={false}
+            returnKeyType="default"
+            autoCorrect={true}
+            autoCapitalize="sentences"
+            keyboardType="default"
+            scrollEnabled={true}
+            selectTextOnFocus={false}
+            clearTextOnFocus={false}
           />
           <Text style={styles.characterCount}>
             {askText.length}/300 characters
           </Text>
           <TouchableOpacity 
-            style={[styles.postButton, askText.length < 10 && styles.postButtonDisabled]} 
-            onPress={submitQuestion}
-            disabled={askText.length < 10}
+            style={[
+              styles.postButton, 
+              (askText.length < 10 || isSubmitting) && styles.postButtonDisabled
+            ]} 
+            onPress={handleSubmitQuestion}
+            disabled={askText.length < 10 || isSubmitting}
+            activeOpacity={0.8}
           >
-            <Text style={styles.postButtonText}>Post</Text>
+            <Text style={styles.postButtonText}>
+              {isSubmitting ? 'Posting...' : 'Post'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -449,6 +514,8 @@ const FeedScreenNew: React.FC<Props> = ({ navigation }) => {
           }
           contentContainerStyle={styles.feedContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
         />
       )}
     </View>
@@ -713,6 +780,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  submitAnswerButtonDisabled: {
+    backgroundColor: theme.colors.border,
+    opacity: 0.5,
+  },
+  submitAnswerButtonTextDisabled: {
+    color: theme.colors.subtext,
   },
   // Answers Display Section
   answersSection: {

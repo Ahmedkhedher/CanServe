@@ -20,6 +20,7 @@ import OnboardingSummaryScreen from '../screens/OnboardingSummaryScreen';
 import FoodScanScreen from '../screens/FoodScanScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import CalendarScreen from '../screens/CalendarScreen';
+import CancerEducationScreen from '../screens/CancerEducationScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -32,6 +33,7 @@ export type RootStackParamList = {
   NutritionCheck: undefined;
   FoodScan: undefined;
   Calendar: undefined;
+  CancerEducation: undefined;
   Question: { id: string } | undefined;
   Compose: { mode: 'question' | 'answer'; questionId?: string } | undefined;
   Profile: { userId?: string } | undefined;
@@ -94,6 +96,7 @@ const AppNavigator: React.FC<Props> = ({ isAuthenticated, onboardingNeeded }) =>
           <Stack.Screen name="NutritionCheck" component={NutritionCheckScreen} />
           <Stack.Screen name="FoodScan" component={FoodScanScreen} />
           <Stack.Screen name="Calendar" component={CalendarScreen} />
+          <Stack.Screen name="CancerEducation" component={CancerEducationScreen} />
           <Stack.Screen 
             name="Question" 
             component={QuestionScreen}

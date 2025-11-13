@@ -263,6 +263,17 @@ const MainScreen: React.FC<any> = ({ navigation }) => {
               </View>
               <Text style={styles.quickText}>Wellness</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickAction}
+              onPress={() => navigation.navigate('CancerEducation')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickIcon, { backgroundColor: '#E74C3C' }]}>
+                <Ionicons name="school" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.quickText}>Learn</Text>
+            </TouchableOpacity>
           </View>
         </View>
 

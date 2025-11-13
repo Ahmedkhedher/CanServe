@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Platform, ScrollView, Image, TextInput } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import { Card, Tag, MetaText } from '../ui/components';
 import { theme } from '../ui/theme';
 import { isSmartwatch, scaleFontSize } from '../ui/responsive';
 import Svg, { Path } from 'react-native-svg';
+import { useSubmission } from '../hooks/useSubmission';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
 
@@ -28,6 +29,15 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
   const [q, setQ] = useState<QType | null>(null);
   const [answers, setAnswers] = useState<AType[]>([]);
   const [answerText, setAnswerText] = useState('');
+  
+  // New submission system
+  const {
+    submitAnswer,
+    isSubmitting,
+    error: submissionError,
+    validationErrors,
+    reset: resetSubmission
+  } = useSubmission();
 
   useEffect(() => {
     (async () => {
@@ -74,20 +84,46 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const submitAnswer = async () => {
+  // Optimized text change handler to prevent re-render issues
+  const handleAnswerTextChange = useCallback((text: string) => {
+    setAnswerText(text);
+  }, []);
+
+  const handleSubmitAnswer = async () => {
     const text = answerText.trim();
     if (!text) {
       Alert.alert('Empty answer', 'Please write an answer');
       return;
     }
+    
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to post an answer');
+      return;
+    }
+    
     try {
+      console.log('Submitting answer:', { questionId: id, answerLength: text.length });
       await addAnswer(id, text);
+      // Only clear text after successful submission
       setAnswerText('');
       const ads = await getAnswersFor(id);
       setAnswers(ads);
+      console.log('Answer submitted successfully');
       Alert.alert('Success', 'Your answer has been posted!');
     } catch (e: any) {
+      console.error('Error submitting answer:', e);
       Alert.alert('Unable to post', e?.message || 'Try again later.');
+      // Don't clear text on error so user can retry
+    }
+  };
+  
+  const loadAnswers = async () => {
+    try {
+      const ads = await getAnswersFor(id);
+      setAnswers(ads);
+    } catch (error) {
+      console.error('Failed to load answers:', error);
     }
   };
 
@@ -217,17 +253,34 @@ const QuestionScreen: React.FC<Props> = ({ route, navigation }) => {
               placeholder="Write your answer..."
               placeholderTextColor={theme.colors.subtext}
               value={answerText}
-              onChangeText={setAnswerText}
+              onChangeText={handleAnswerTextChange}
               style={styles.answerInput}
               multiline
               maxLength={500}
+              returnKeyType="done"
+              blurOnSubmit={false}
+              textAlignVertical="top"
+              autoCorrect={true}
+              autoCapitalize="sentences"
+              keyboardType="default"
+              scrollEnabled={true}
+              selectTextOnFocus={false}
+              clearTextOnFocus={false}
             />
             <TouchableOpacity 
-              style={[styles.submitAnswerButton, !answerText.trim() && styles.submitAnswerButtonDisabled]}
-              onPress={submitAnswer}
-              disabled={!answerText.trim()}
+              style={[
+                styles.submitAnswerButton, 
+                (!answerText || !answerText.trim()) && styles.submitAnswerButtonDisabled
+              ]}
+              onPress={handleSubmitAnswer}
+              disabled={!answerText || !answerText.trim() || isSubmitting}
+              activeOpacity={0.7}
             >
-              <Ionicons name="send" size={scaleFontSize(20)} color={theme.colors.primaryText} />
+              <Ionicons 
+                name="send" 
+                size={scaleFontSize(20)} 
+                color={(!answerText || !answerText.trim()) ? theme.colors.subtext : theme.colors.primaryText} 
+              />
             </TouchableOpacity>
           </View>
         )}
